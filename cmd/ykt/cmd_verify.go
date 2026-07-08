@@ -1,10 +1,66 @@
 package main
 
 import (
+	"bytes"
+	"crypto"
+	"crypto/x509"
 	"fmt"
+	"os"
+	"path/filepath"
 
 	"github.com/go-piv/piv-go/v2/piv"
+	"golang.org/x/crypto/ssh"
 )
+
+// publishedCAKey loads the CA public key ykt actually trusts for (domain,role):
+// the SSH authorized-key for the user/host CAs, and the X.509 client-CA cert for
+// tls (mTLS). This is the material that grants access, so it's what the
+// attestation must be bound to.
+func publishedCAKey(dn, role, anchor string) (crypto.PublicKey, error) {
+	if role == "tls" {
+		cert, err := loadCertPEM(clientCACertPath(dn, anchor))
+		if err != nil {
+			return nil, err
+		}
+		return cert.PublicKey, nil
+	}
+	f := caPubPath(dn, role, anchor)
+	b, err := os.ReadFile(f)
+	if err != nil {
+		return nil, fmt.Errorf("read %s: %w", filepath.Base(f), err)
+	}
+	sshPub, _, _, _, err := ssh.ParseAuthorizedKey(b)
+	if err != nil {
+		return nil, fmt.Errorf("parse %s: %w", filepath.Base(f), err)
+	}
+	ck, ok := sshPub.(ssh.CryptoPublicKey)
+	if !ok {
+		return nil, fmt.Errorf("SSH CA pub has no extractable key")
+	}
+	return ck.CryptoPublicKey(), nil
+}
+
+// caPubMatchesAttested reports whether the published, trusted CA key for
+// (domain,role) is exactly the attested on-device key (attested = the slot
+// attestation cert's subject key, proven on-device by piv.Verify). Without this
+// bind, verify would pass even if a committed CA key were swapped for an
+// off-device attacker key while the genuine attestation PEMs were left in place.
+// Comparison is on PKIX DER, uniform across ed25519/ECDSA and both formats.
+func caPubMatchesAttested(dn, role, anchor string, attested crypto.PublicKey) (bool, error) {
+	published, err := publishedCAKey(dn, role, anchor)
+	if err != nil {
+		return false, err
+	}
+	pa, err := x509.MarshalPKIXPublicKey(attested)
+	if err != nil {
+		return false, fmt.Errorf("attested key: %w", err)
+	}
+	pp, err := x509.MarshalPKIXPublicKey(published)
+	if err != nil {
+		return false, fmt.Errorf("published key: %w", err)
+	}
+	return bytes.Equal(pa, pp), nil
+}
 
 // cmdVerifyAttestation proves — OFFLINE, from the published pub/ material alone —
 // that each CA key was generated on the YubiKey and never imported, by verifying
@@ -18,8 +74,9 @@ func cmdVerifyAttestation(args []string) {
 	}
 
 	head("Verify PIV attestations (offline — against Yubico's root)")
-	explain("Proves each CA key was generated ON the YubiKey (never imported),",
-		"using only published pub/ material — no hardware or network needed.")
+	explain("Proves the CA key you TRUST for each domain/role was generated ON the",
+		"YubiKey (never imported): chains the attestation to Yubico's root, binds it",
+		"to the published CA key, and checks the serial. Public material only.")
 
 	pass, fail, missing := 0, 0, 0
 	for _, an := range anchors {
@@ -54,15 +111,24 @@ func cmdVerifyAttestation(args []string) {
 					fail++
 					continue
 				}
-				serialNote := ""
-				if haveSerial && att.Serial != registered {
-					serialNote = fmt.Sprintf("  ✘ serial %d ≠ registered %d", att.Serial, registered)
+				// Bind: the attested on-device key MUST be the published CA key,
+				// and the device serial MUST match the registry.
+				match, berr := caPubMatchesAttested(dn, rs.role, an, slot.PublicKey)
+				switch {
+				case berr != nil:
+					warn("[%s/%s/%s] cannot bind attestation to the published CA key: %v", an, dn, rs.role, berr)
 					fail++
-				} else {
+				case !match:
+					warn("[%s/%s/%s] PUBLISHED CA KEY IS NOT THE ATTESTED ON-DEVICE KEY — possible substitution", an, dn, rs.role)
+					fail++
+				case haveSerial && att.Serial != registered:
+					warn("[%s/%s/%s] attested serial %d ≠ registered %d", an, dn, rs.role, att.Serial, registered)
+					fail++
+				default:
 					pass++
+					say("  [%s/%s/%-4s] on-device + bound ✓  serial=%d  touch=%s pin=%s",
+						an, dn, rs.role, att.Serial, touchName(att.TouchPolicy), pinName(att.PINPolicy))
 				}
-				say("  [%s/%s/%-4s] on-device ✓  serial=%d  touch=%s pin=%s%s",
-					an, dn, rs.role, att.Serial, touchName(att.TouchPolicy), pinName(att.PINPolicy), serialNote)
 			}
 		}
 	}
