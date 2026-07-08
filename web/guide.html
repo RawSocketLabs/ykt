@@ -232,9 +232,11 @@ ssh root@203.0.113.50            <span class="c"># in with your cert; nothing id
   <div class="ex"><h3>⑦ Two operators &amp; an off-site backup anchor</h3>
   <pre><span class="c"># operator B, at another site, provisions the second anchor:</span>
 ykt <b>init ca</b> a2                    <span class="c"># additive genesis on a2 (no reset if partial)</span>
-git commit -am "add anchor a2" &amp;&amp; git push
-<span class="c"># now EITHER anchor can sign; keep a2 off-site. Signing requests and</span>
-<span class="c"># signed certs travel as git commits — pull, sign, push.</span></pre></div>
+ykt <b>repo push</b>                     <span class="c"># commit + push the new public material</span>
+<span class="c"># operator A pulls it in and can now sign too:</span>
+ykt <b>repo sync</b>                      <span class="c"># fast-forward the shared trust store</span>
+<span class="c"># keep a2 off-site. Requests and signed certs ride through the store —</span>
+<span class="c"># sync, sign, push. No fork of the tool, just your data repo.</span></pre></div>
 
   <div class="ex"><h3>⑧ Run <code>ykt</code> from anywhere</h3>
   <pre><span class="c"># from inside your store checkout, once:</span>

@@ -2,6 +2,7 @@
 
 [![CI](https://github.com/RawSocketLabs/ykt/actions/workflows/ci.yml/badge.svg)](https://github.com/RawSocketLabs/ykt/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/RawSocketLabs/ykt?sort=semver)](https://github.com/RawSocketLabs/ykt/releases)
+[![Go Report Card](https://goreportcard.com/badge/github.com/RawSocketLabs/ykt)](https://goreportcard.com/report/github.com/RawSocketLabs/ykt)
 [![Go Reference](https://pkg.go.dev/badge/github.com/RawSocketLabs/ykt.svg)](https://pkg.go.dev/github.com/RawSocketLabs/ykt)
 [![License](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue)](#license)
 
@@ -16,8 +17,9 @@ native SSH. Only `pcscd` is required at runtime — no ykman/OpenSC/OpenSSL/p11t
 > **Bring your own config.** Nothing in the code is specific to any one setup —
 > your domains, anchors, and machines are all config. Copy `config.toml.example`
 > → `config.toml`, edit it, and run `ykt init ca` with your own YubiKeys. Your
-> populated trust tree (`pub/`, `index/`, `config.toml`, …) is yours and stays
-> gitignored; keep it in a private checkout, not a public fork.
+> populated trust tree (`config.toml`, `pub/`, `index/`, …) is *data* — keep it
+> in its **own** private git repo managed by [`ykt repo`](#run-your-own-ca-dont-fork-the-tool),
+> not in a fork of this tool.
 
 ## Install
 
@@ -43,6 +45,55 @@ bin/ykt flow                            # guided: assess state and do the next s
 `ykt flow` is the conductor: it assesses the whole system, lists the pending
 steps in order, waits for the right YubiKey to be inserted, and runs each with
 your approval. When unsure what to do next, run it.
+
+## Run your own CA (don't fork the tool)
+
+You don't fork this repository to use `ykt`. Install the **binary**, then keep
+your CA material in its **own private git repo** — tool and data stay separate,
+so upstream code never mixes with your secrets and updating the tool is just
+another `go install`.
+
+```
+# 1. install the tool (same command updates it later)
+go install github.com/RawSocketLabs/ykt/cmd/ykt@latest
+
+# 2. create your trust store as its own private data repo
+mkdir my-trust && cd my-trust
+curl -fsSLO https://raw.githubusercontent.com/RawSocketLabs/ykt/main/config.toml.example
+mv config.toml.example config.toml && $EDITOR config.toml    # your domains, anchors, slots
+ykt repo init --remote git@github.com:you/my-trust.git       # git repo + data .gitignore + first commit
+
+# 3. build your CA (see the Quickstart above, or `ykt flow`)
+ykt init ca a1
+
+# 4. share the public material with co-operators
+ykt repo push          # commit local changes and push
+ykt repo sync          # fast-forward pull teammates' updates
+ykt repo status        # what's changed locally
+```
+
+`ykt repo init` writes a data-oriented `.gitignore` that **tracks** the public
+CA material (`config.toml`, `pub/`, `index/`, `queue/`, `dist/`, inventory,
+`<anchor>.json`) and **ignores** secrets, the audit log, and build output. PINs,
+PUKs, and private keys are never written to disk by `ykt` — they live on paper
+and inside the YubiKeys — so they can't be committed by accident. A second
+operator just clones your store repo and uses `ykt repo sync` / `push`; no fork,
+no code involved.
+
+## Forking & contributing
+
+Fork this repo only to **change the tool itself** (fix a bug, add a feature) —
+not to run your own CA (that's `ykt repo`, above). If you do fork:
+
+- **Kill the pipelines you don't need.** Releases are already gated to the
+  canonical repo, so a fork never publishes. To turn CI off too, set repository
+  variable `YKT_DISABLE_CI=true` (Settings → Secrets and variables → Actions →
+  Variables), or disable Actions in the fork's settings.
+- **Nothing to re-point.** No org, domain, or path is hardcoded — names are all
+  config, and config lives in your separate `ykt repo` store, not here.
+- **Send changes upstream** with Conventional Commits (`feat:`, `fix:`, …); see
+  [CONTRIBUTING.md](CONTRIBUTING.md). Merged `feat`/`fix` commits on `main`
+  auto-tag and publish a release.
 
 Prefer a browser? **`ykt docs`** serves this documentation offline (it's embedded
 in the binary) and opens it in your browser.

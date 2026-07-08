@@ -66,15 +66,18 @@ docs: clarify the carry-only-the-key flow
 
 ## Releases
 
-Releases are automated with [release-please](https://github.com/googleapis/release-please):
-merged Conventional Commits accumulate into a "release PR" that bumps the
-version and updates `CHANGELOG.md`. Merging that PR tags the release and CI
-attaches built binaries for Linux, macOS, and Windows. Maintainers don't tag by
-hand.
+Releases are automated from `main` — no manual tagging and no release PRs (the
+org disallows Actions creating PRs). On each push to `main` a workflow reads the
+merged Conventional Commits and, when a `feat:` or `fix:` is present, tags the
+next semver and publishes a GitHub Release with binaries for Linux, macOS, and
+Windows (`docs:`/`chore:`-only pushes don't release). To cut a specific version
+by hand, push a `vX.Y.Z` tag — the same workflow builds and publishes it.
 
 ## Project layout
 
-Single `main` package at the repo root (so `go install github.com/RawSocketLabs/ykt/cmd/ykt@latest`
-works). Command handlers are named to mirror their CLI path (`cmdInitCA`,
-`cmdCertSign`, `cmdSetupKey`, …). See [README.md](README.md) for the command map
-and [RECOVERY.md](RECOVERY.md) for the trust and break-glass model.
+The CLI is `package main` under `cmd/ykt/` (so `go install github.com/RawSocketLabs/ykt/cmd/ykt@latest`
+works); a small root `package ykt` (`docs.go`) exists only to embed the bundled
+documentation. Command handlers are named to mirror their CLI path (`cmdInitCA`,
+`cmdCertSign`, `cmdSetupKey`, `cmdRepoInit`, …). See [README.md](README.md) for
+the command map and [RECOVERY.md](RECOVERY.md) for the trust and break-glass
+model.

@@ -1,0 +1,180 @@
+package main
+
+// repo: manage the trust store as its own git repository — the recommended way
+// to keep and share the public CA material between operators WITHOUT forking the
+// tool's source. Install the binary (`go install` or a release), then:
+//
+//	ykt repo init [--remote URL]   turn a directory into a data-only store repo
+//	ykt repo sync                  git pull the latest (fast-forward)
+//	ykt repo push [-m msg]         commit local changes and push
+//	ykt repo status                git status of the store
+//
+// The store tracks config.toml + pub/ + index/ + queue/ + dist/ + inventory +
+// <anchor>.json (all public material); only secrets, logs, and build output are
+// ignored. Nothing here needs the tool's Go source.
+
+import (
+	"os"
+	"os/exec"
+	"path/filepath"
+)
+
+// repoGitignore is the .gitignore a trust-store data repo uses.
+const repoGitignore = `# ykt trust store — a DATA repo of public CA material, synced between operators.
+# config.toml, pub/, index/, queue/, dist/, inventory.toml and <anchor>.json are
+# tracked on purpose; only genuine secrets, logs, and build output are ignored.
+
+# secrets — never commit (PINs/PUKs are paper-only; keys live on the YubiKey)
+*.age
+*.key
+*.puk
+info.json
+
+# machine-local / scratch
+ykt.log
+*.tmp
+/bin/
+.DS_Store
+`
+
+// git runs git in dir, wired to this terminal (so auth prompts / progress show).
+func git(dir string, args ...string) error {
+	c := exec.Command("git", args...)
+	c.Dir = dir
+	c.Stdin, c.Stdout, c.Stderr = os.Stdin, os.Stdout, os.Stderr
+	return c.Run()
+}
+
+// gitOK reports whether a git command succeeds (for predicate checks).
+func gitOK(dir string, args ...string) bool {
+	c := exec.Command("git", args...)
+	c.Dir = dir
+	return c.Run() == nil
+}
+
+func cmdRepoInit(args []string, remote string) {
+	if _, err := exec.LookPath("git"); err != nil {
+		fatal("git is not installed — install git first")
+	}
+	dir := "."
+	if len(args) == 1 {
+		dir = args[0]
+	}
+	abs, err := filepath.Abs(dir)
+	if err != nil {
+		fatal("bad path %q: %v", dir, err)
+	}
+	if err := ensureDir(abs); err != nil {
+		fatal("%v", err)
+	}
+
+	head("Initialize a ykt trust-store repo in %s", abs)
+	if !isTrustStore(abs) {
+		note("no config.toml here yet — after this, copy config.toml.example → config.toml and edit it.")
+	}
+	if dryRun {
+		note("dry-run: would git-init, write .gitignore%s, and make the first commit", remoteSuffix(remote))
+		return
+	}
+
+	if _, err := os.Stat(filepath.Join(abs, ".git")); err != nil {
+		if err := git(abs, "init"); err != nil {
+			fatal("git init: %v", err)
+		}
+	} else {
+		note("already a git repo — leaving history intact")
+	}
+
+	gi := filepath.Join(abs, ".gitignore")
+	if !fileExists(gi) {
+		if err := writeFileAtomic(gi, []byte(repoGitignore), 0o644); err != nil {
+			fatal("%v", err)
+		}
+	}
+
+	if remote != "" {
+		_ = git(abs, "remote", "remove", "origin") // replace any existing origin
+		if err := git(abs, "remote", "add", "origin", remote); err != nil {
+			fatal("git remote add: %v", err)
+		}
+	}
+
+	if err := git(abs, "add", "-A"); err != nil {
+		fatal("git add: %v", err)
+	}
+	if !gitOK(abs, "diff", "--cached", "--quiet") { // staged changes present
+		if err := git(abs, "commit", "-m", "chore: initialize ykt trust store"); err != nil {
+			fatal("git commit: %v", err)
+		}
+	}
+	good("trust store repo ready at %s", abs)
+	if remote != "" {
+		say("Publish it:  ykt repo push")
+	} else {
+		say("Add a remote when ready:  cd %s && git remote add origin <url> && ykt repo push", abs)
+	}
+}
+
+func remoteSuffix(remote string) string {
+	if remote != "" {
+		return ", set origin=" + remote
+	}
+	return ""
+}
+
+// storeDir returns the resolved trust store for sync/push/status (PreRun's
+// requireTrustHome has already set trustHome for these non-optional commands).
+func storeDir() string {
+	if trustHome == "" {
+		requireTrustHome()
+	}
+	if !gitOK(trustHome, "rev-parse", "--is-inside-work-tree") {
+		fatal("%s is not a git repo — run `ykt repo init` there first", trustHome)
+	}
+	return trustHome
+}
+
+func cmdRepoSync() {
+	dir := storeDir()
+	head("Sync trust store (git pull) — %s", dir)
+	if dryRun {
+		note("dry-run: would git pull --ff-only")
+		return
+	}
+	if err := git(dir, "pull", "--ff-only"); err != nil {
+		fatal("fast-forward pull failed — resolve by hand (git pull / rebase) in %s: %v", dir, err)
+	}
+	good("up to date")
+}
+
+func cmdRepoPush(msg string) {
+	dir := storeDir()
+	head("Push trust store (commit + push) — %s", dir)
+	if dryRun {
+		note("dry-run: would git add -A, commit, and push")
+		return
+	}
+	if err := git(dir, "add", "-A"); err != nil {
+		fatal("git add: %v", err)
+	}
+	if gitOK(dir, "diff", "--cached", "--quiet") {
+		note("no local changes to commit — pushing any pending commits")
+	} else {
+		if msg == "" {
+			msg = "chore: update trust material"
+		}
+		if err := git(dir, "commit", "-m", msg); err != nil {
+			fatal("git commit: %v", err)
+		}
+	}
+	if err := git(dir, "push"); err != nil {
+		fatal("git push: %v", err)
+	}
+	good("pushed")
+}
+
+func cmdRepoStatus() {
+	dir := storeDir()
+	head("Trust store git status — %s", dir)
+	_ = git(dir, "status", "-sb")
+}

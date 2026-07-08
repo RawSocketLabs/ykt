@@ -69,6 +69,7 @@ func main() {
 		grouped("start", newDocsCmd()),
 		grouped("build", newInitCmd()),    // ca / user / host — provision keys & hosts into trust
 		grouped("build", newCertCmd()),    // sign / install / revoke / expiring
+		grouped("deploy", newRepoCmd()),   // init / sync / push — your trust store as a git repo
 		grouped("deploy", newDataCmd()),   // inventory / record — machines & records
 		grouped("deploy", newRemoteCmd()), // collect / install — operator → remote hosts
 		grouped("deploy", newSetupCmd()),  // ssh / key / vps / caddy — set up consumers
@@ -185,6 +186,41 @@ func newSetupCmd() *cobra.Command {
 		newCaddyCmd(),
 	)
 	return setup
+}
+
+// newRepoCmd groups management of the trust store as a git repo — the way to
+// keep and share the public CA material without forking the tool's source.
+func newRepoCmd() *cobra.Command {
+	repo := &cobra.Command{Use: "repo", Short: "Manage the trust store as a git repo (init / sync / push / status)"}
+
+	var remote string
+	initc := &cobra.Command{
+		Use:         "init [path]",
+		Short:       "Turn a directory into a data-only trust-store git repo",
+		Annotations: storeOptionalAnn,
+		Args:        cobra.MaximumNArgs(1),
+		Run:         func(c *cobra.Command, a []string) { cmdRepoInit(a, remote) },
+	}
+	initc.Flags().StringVar(&remote, "remote", "", "set the origin remote URL (e.g. git@github.com:you/trust.git)")
+
+	var msg string
+	push := &cobra.Command{
+		Use:   "push",
+		Short: "Commit local changes and push the store",
+		Args:  cobra.NoArgs,
+		Run:   func(c *cobra.Command, a []string) { cmdRepoPush(msg) },
+	}
+	push.Flags().StringVarP(&msg, "message", "m", "", `commit message (default: "chore: update trust material")`)
+
+	repo.AddCommand(
+		initc,
+		&cobra.Command{Use: "sync", Short: "Fetch and fast-forward the store (git pull)",
+			Args: cobra.NoArgs, Run: func(c *cobra.Command, a []string) { cmdRepoSync() }},
+		push,
+		&cobra.Command{Use: "status", Short: "Show the store's git status",
+			Args: cobra.NoArgs, Run: func(c *cobra.Command, a []string) { cmdRepoStatus() }},
+	)
+	return repo
 }
 
 // newDataCmd groups the trust-bookkeeping files.
