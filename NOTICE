@@ -1,0 +1,5 @@
+ykt — YubiKey-anchored offline CA for SSH and mTLS
+Copyright 2026 Raw Socket Labs and the ykt authors
+
+This product is dual-licensed under the Apache License, Version 2.0
+(LICENSE-APACHE) and the MIT License (LICENSE-MIT), at your option.

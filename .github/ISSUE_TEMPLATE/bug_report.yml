@@ -1,0 +1,43 @@
+name: Bug report
+description: Something isn't working as documented
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. **Never paste PINs, PUKs, or private keys.**
+        Public CA material and command output are fine.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What did you run, what did you expect, what happened instead?
+      placeholder: |
+        $ ykt ...
+        (output)
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: ykt version
+      description: Output of `ykt --version`
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: OS / arch
+      placeholder: "Fedora 44 x86_64 / macOS 15 arm64 / Windows 11"
+    validations:
+      required: true
+  - type: input
+    id: firmware
+    attributes:
+      label: YubiKey model / firmware (if hardware-related)
+      placeholder: "YubiKey 5C Nano, firmware 5.7.4"
+  - type: textarea
+    id: doctor
+    attributes:
+      label: "`ykt doctor` output"
+      render: shell
