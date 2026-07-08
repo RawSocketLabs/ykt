@@ -6,6 +6,7 @@ require (
 	github.com/BurntSushi/toml v1.6.0
 	github.com/go-piv/piv-go/v2 v2.3.0
 	github.com/spf13/cobra v1.10.2
+	github.com/yuin/goldmark v1.8.2
 	golang.org/x/crypto v0.39.0
 	golang.org/x/term v0.32.0
 )

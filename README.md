@@ -44,6 +44,30 @@ bin/ykt flow                            # guided: assess state and do the next s
 steps in order, waits for the right YubiKey to be inserted, and runs each with
 your approval. When unsure what to do next, run it.
 
+Prefer a browser? **`ykt docs`** serves this documentation offline (it's embedded
+in the binary) and opens it in your browser.
+
+## Platform support
+
+`ykt` runs on **Linux, macOS, and Windows** — prebuilt binaries are published for
+each. YubiKey **PIV** works natively everywhere (cgo + pcsc-lite on Linux, the
+system PC/SC framework on macOS, the Windows smart-card API — no cgo — on Windows).
+
+| Capability | Linux | macOS | Windows |
+|---|---|---|---|
+| PIV — anchor genesis, mTLS, cert stash, `setup key` | ✅ | ✅ | ✅ |
+| FIDO2 daily key (`init user`, via `ssh-keygen -t …-sk`) | ✅ | ✅ | ⚠️ needs a recent Win32-OpenSSH with security-key support |
+| Store discovery, XDG dirs, `setup home`, `docs` | ✅ | ✅ | ✅ |
+| SSH client config + certs in `~/.ssh` | ✅ | ✅ | ✅ |
+| `init host` (run **on** a host to trust a CA) | ✅ systemd | ⚠️ manual `sshd` reload | ❌ different `sshd` model |
+
+You **operate** ykt from any of the three — sign, install certs, manage config,
+carry only the key. `init host` provisions a host's `sshd` in place and expects a
+Unix host (systemd for the auto-reload); you can still push trust to Unix hosts
+*from* Windows/macOS with `remote install`. The one client-side caveat is Windows
+FIDO2 key generation, which depends on your OpenSSH build's security-key support —
+every PIV-based flow is unaffected.
+
 ## Interaction model
 
 **Preflight → gather all inputs → one PLAN confirmation → execute.** Preflight

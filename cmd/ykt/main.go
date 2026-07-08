@@ -30,7 +30,7 @@ func main() {
 			// doctor (fresh machine) and `setup home` (records where the store
 			// IS) must run without an already-locatable store; everything else
 			// needs config.toml.
-			if cmd.Name() == "doctor" || cmd.Name() == "home" {
+			if cmd.Name() == "doctor" || cmd.Name() == "home" || cmd.Name() == "docs" {
 				initTrustHome()
 			} else {
 				requireTrustHome()
@@ -64,6 +64,7 @@ func main() {
 		grouped("start", newDoctorCmd()),
 		grouped("start", &cobra.Command{Use: "status", Short: "Registry, inventory, queue, and ledger summary",
 			Args: cobra.NoArgs, Run: func(c *cobra.Command, a []string) { cmdStatus() }}),
+		grouped("start", newDocsCmd()),
 		grouped("build", newInitCmd()),    // ca / user / host — provision keys & hosts into trust
 		grouped("build", newCertCmd()),    // sign / install / revoke / expiring
 		grouped("deploy", newDataCmd()),   // inventory / record — machines & records
@@ -171,6 +172,20 @@ func newDataCmd() *cobra.Command {
 			Args: cobra.ExactArgs(1), Run: func(c *cobra.Command, a []string) { cmdDataRecord(a) }},
 	)
 	return data
+}
+
+func newDocsCmd() *cobra.Command {
+	var port int
+	var noBrowser bool
+	c := &cobra.Command{
+		Use:   "docs",
+		Short: "Open the bundled documentation in a browser (offline, embedded)",
+		Args:  cobra.NoArgs,
+		Run:   func(c *cobra.Command, a []string) { cmdDocs(port, noBrowser) },
+	}
+	c.Flags().IntVar(&port, "port", 0, "port to serve on (default: a free port chosen automatically)")
+	c.Flags().BoolVar(&noBrowser, "no-browser", false, "just serve; don't try to open a browser")
+	return c
 }
 
 func newDoctorCmd() *cobra.Command {
