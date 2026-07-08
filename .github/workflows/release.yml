@@ -2,7 +2,8 @@ name: Release
 
 on:
   push:
-    branches: [main]
+    branches: [main]     # auto-tag from Conventional Commits, then release
+    tags: ['v*']         # or release a manually/seed-pushed tag
   workflow_dispatch: {}
 
 # Only contents:write is needed (create tags + releases). No pull-request
@@ -11,10 +12,10 @@ permissions:
   contents: write
 
 jobs:
-  # Compute the next semver from Conventional Commits and create the tag.
-  # Runs only on the canonical repo; never on forks.
+  # On a push to main (canonical repo only), compute the next semver from
+  # Conventional Commits and create the tag. Skipped on tag pushes.
   version:
-    if: ${{ github.repository == 'RawSocketLabs/ykt' && vars.YKT_DISABLE_CI != 'true' }}
+    if: ${{ github.ref == 'refs/heads/main' && github.repository == 'RawSocketLabs/ykt' && vars.YKT_DISABLE_CI != 'true' }}
     runs-on: ubuntu-latest
     outputs:
       tag: ${{ steps.tag.outputs.new_tag }}
@@ -30,11 +31,11 @@ jobs:
           release_branches: main
           tag_prefix: v
 
-  # Build a native binary per OS and publish the GitHub Release. Same run as
-  # the tag job, so it doesn't depend on the tag-push event re-triggering.
+  # Build a native binary per OS and publish the Release. Runs when the version
+  # job created a tag, or when a v* tag was pushed directly.
   binaries:
     needs: version
-    if: ${{ needs.version.outputs.tag != '' }}
+    if: ${{ always() && github.repository == 'RawSocketLabs/ykt' && (needs.version.outputs.tag != '' || startsWith(github.ref, 'refs/tags/v')) }}
     strategy:
       fail-fast: false
       matrix:
@@ -58,6 +59,9 @@ jobs:
         with:
           go-version: '1.24'
           check-latest: true
+      - name: Resolve tag
+        shell: bash
+        run: echo "TAG=${{ needs.version.outputs.tag || github.ref_name }}" >> "$GITHUB_ENV"
       - name: Platform setup
         shell: bash
         run: ${{ matrix.setup }}
@@ -65,7 +69,6 @@ jobs:
         shell: bash
         env:
           CGO_ENABLED: ${{ matrix.cgo }}
-          TAG: ${{ needs.version.outputs.tag }}
         run: |
           go build -trimpath -ldflags "-s -w -X main.version=${TAG}" -o "${{ matrix.asset }}" ./cmd/ykt
       - name: Checksum
@@ -79,7 +82,7 @@ jobs:
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ needs.version.outputs.tag }}
+          tag_name: ${{ env.TAG }}
           generate_release_notes: true
           files: |
             ${{ matrix.asset }}

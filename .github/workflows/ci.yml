@@ -87,6 +87,8 @@ jobs:
       # The gitleaks GitHub Action requires a paid license for org repos; the
       # binary is free (MIT). Build + run it directly.
       - name: gitleaks
+        # NB: gitleaks' Go module path is still github.com/zricethezav/... even
+        # though the repo moved to github.com/gitleaks.
         run: |
-          go install github.com/gitleaks/gitleaks/v8@latest
-          gitleaks dir . --redact --no-banner
+          go install github.com/zricethezav/gitleaks/v8@latest
+          "$(go env GOPATH)/bin/gitleaks" dir . --redact --no-banner
