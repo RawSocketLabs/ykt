@@ -21,7 +21,7 @@ func TestRepoInit(t *testing.T) {
 	t.Setenv("GIT_COMMITTER_EMAIL", "test@example.com")
 
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "config.toml"), []byte("# test"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "config.toml"), []byte("[domains.test]\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	t.Chdir(dir)

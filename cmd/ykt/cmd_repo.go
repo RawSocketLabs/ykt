@@ -114,7 +114,9 @@ func cmdRepoInit(args []string, remote string) {
 	}
 
 	head("Initialize a ykt trust-store repo in %s", abs)
-	seedConfig := !isTrustStore(abs) && len(ykt.ConfigExample) > 0
+	// Seed a starter config only when NONE exists — never overwrite a config.toml
+	// that's already there (ours or a user's).
+	seedConfig := !fileExists(filepath.Join(abs, "config.toml")) && len(ykt.ConfigExample) > 0
 	if dryRun {
 		if seedConfig {
 			note("dry-run: would seed a starter config.toml from the bundled example")

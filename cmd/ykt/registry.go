@@ -19,11 +19,19 @@ import (
 
 var trustHome string
 
-// isTrustStore reports whether dir is a ykt trust store (holds config.toml).
-// This is the single definition of "what marks a store".
+// isTrustStore reports whether dir is a ykt trust store. It requires config.toml
+// to decode and declare at least one [domains.*], so the CWD walk / pointer
+// never latches onto an unrelated project's config.toml (a common filename).
 func isTrustStore(dir string) bool {
-	fi, err := os.Stat(filepath.Join(dir, "config.toml"))
-	return err == nil && !fi.IsDir()
+	p := filepath.Join(dir, "config.toml")
+	if fi, err := os.Stat(p); err != nil || fi.IsDir() {
+		return false
+	}
+	var r Registry
+	if _, err := toml.DecodeFile(p, &r); err != nil {
+		return false
+	}
+	return len(r.Domains) > 0
 }
 
 // storeFromEnvOrCWD is the "where am I" answer: $YKT_HOME, else the nearest
@@ -263,12 +271,25 @@ func (r *Registry) setAnchorSerial(anchor, serial string) error {
 // ---------------------------------------------------------------- inventory
 
 type Machine struct {
-	Domain     string   `toml:"domain"`
+	Domain     string   `toml:"domain"`               // primary domain (zone/FQDN + host cert)
+	Trust      []string `toml:"trust,omitempty"`      // ADDITIONAL user-CA domains this host accepts
 	Address    string   `toml:"address,omitempty"`    // ssh destination (host or user@host)
 	SSHUser    string   `toml:"ssh_user,omitempty"`   // optional; default from ssh config
 	Principals []string `toml:"principals,omitempty"` // host-cert principals; default derived
 	Roles      []string `toml:"roles,omitempty"`      // ssh-host, caddy-edge, ...
 	Notes      string   `toml:"notes,omitempty"`
+}
+
+// trustedDomains is the full set of domains whose user CAs this host accepts:
+// the primary Domain plus any additional Trust domains, deduped, primary first.
+func (m Machine) trustedDomains() []string {
+	out := []string{m.Domain}
+	for _, d := range m.Trust {
+		if d != "" && !slices.Contains(out, d) {
+			out = append(out, d)
+		}
+	}
+	return out
 }
 
 type Inventory struct {

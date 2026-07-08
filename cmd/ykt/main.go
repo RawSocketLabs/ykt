@@ -473,7 +473,7 @@ func newInventoryCmd() *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		Run: func(c *cobra.Command, a []string) {
 			set := map[string]string{}
-			for _, k := range []string{"domain", "address", "principals", "roles", "notes"} {
+			for _, k := range []string{"domain", "trust", "address", "principals", "roles", "notes"} {
 				if c.Flags().Changed(k) {
 					v, _ := c.Flags().GetString(k)
 					set[k] = v
@@ -482,7 +482,8 @@ func newInventoryCmd() *cobra.Command {
 			inventoryAdd(a[0], set)
 		},
 	}
-	add.Flags().String("domain", "", "trust domain (required for new machines)")
+	add.Flags().String("domain", "", "primary trust domain (required for new machines)")
+	add.Flags().String("trust", "", "ADDITIONAL user-CA domains this host accepts (comma-separated)")
 	add.Flags().String("address", "", "ssh destination (host or user@host)")
 	add.Flags().String("principals", "", "comma-separated host-cert principals")
 	add.Flags().String("roles", "", "comma-separated roles (ssh-host, caddy-edge, ...)")

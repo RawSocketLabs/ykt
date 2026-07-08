@@ -43,7 +43,7 @@ func TestStoreDiscovery(t *testing.T) {
 	if isTrustStore(dir) {
 		t.Fatal("empty dir must not be a trust store")
 	}
-	if err := os.WriteFile(filepath.Join(dir, "config.toml"), []byte("# test"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "config.toml"), []byte("[domains.test]\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if !isTrustStore(dir) {
@@ -85,7 +85,7 @@ func TestHomePointer(t *testing.T) {
 	if err := os.MkdirAll(store, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(store, "config.toml"), []byte("# test"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(store, "config.toml"), []byte("[domains.test]\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.MkdirAll(filepath.Dir(homePointerPath()), 0o755); err != nil {

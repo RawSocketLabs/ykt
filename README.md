@@ -138,7 +138,7 @@ hardware.
 | Last mile | `ykt cert install <name> <domain...>` | the enrollee's machine |
 | Carry only the key | `ykt setup key [domain...]` | a fresh machine, key inserted (no files to bring) |
 | Host trust (local) | `sudo ykt init host <domain>` | ON the host (guided; optional password-off) |
-| Host trust (remote) | `ykt remote collect` / `ykt remote install [--apply] [--all]` | operator machine (`--all` re-pushes KRLs everywhere after a revoke) |
+| Host trust (remote) | `ykt remote collect` / `ykt remote install [--apply] [--all]` | operator machine; installs each host's **full** trust set (`inventory add --trust <d,…>` for multi-domain); `--all` sweeps every host after a revoke |
 | SSH config | `ykt setup ssh init [--include top\|bottom]\|add\|sync\|list\|remove` | client machines; all under `~/.ssh/ykt/<domain>/` (never collides) |
 | mTLS edge | `ykt setup caddy <domain...>` | generates Caddy client-auth config |
 | Test boxes | `ykt setup bootstrap cloud-init\|install-script\|trust` | throwaway VPS onboarding |

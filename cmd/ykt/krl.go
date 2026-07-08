@@ -40,6 +40,17 @@ type krlCAGroup struct {
 // and a2 revoke independently). krlVersion should increase on every
 // regeneration so sshd knows it's newer.
 func writeKRL(path string, groups []krlCAGroup, krlVersion uint64, comment string) error {
+	out, err := buildKRL(groups, krlVersion, comment)
+	if err != nil {
+		return err
+	}
+	return writeFileAtomic(path, out, 0o644)
+}
+
+// buildKRL returns the KRL bytes (one certificates-section per CA). Shared by
+// writeKRL (per-domain file) and mergedKRL (a combined KRL for a multi-domain
+// host, pushed to sshd's single RevokedKeys file).
+func buildKRL(groups []krlCAGroup, krlVersion uint64, comment string) ([]byte, error) {
 	var out []byte
 	out = putU64(out, krlMagic)
 	out = putU32(out, krlFormatVersion)
@@ -55,7 +66,7 @@ func writeKRL(path string, groups []krlCAGroup, krlVersion uint64, comment strin
 		}
 		pub, _, _, _, err := ssh.ParseAuthorizedKey(g.caPub)
 		if err != nil {
-			return fmt.Errorf("parsing CA key: %w", err)
+			return nil, fmt.Errorf("parsing CA key: %w", err)
 		}
 		sort.Slice(g.serials, func(i, j int) bool { return g.serials[i] < g.serials[j] })
 		var serialData []byte
@@ -71,5 +82,5 @@ func writeKRL(path string, groups []krlCAGroup, krlVersion uint64, comment strin
 		out = append(out, krlSectionCertificates)
 		out = putString(out, certSection)
 	}
-	return writeFileAtomic(path, out, 0o644)
+	return out, nil
 }

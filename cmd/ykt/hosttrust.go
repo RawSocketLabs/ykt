@@ -100,6 +100,50 @@ func singleKRL(domains []string) []byte {
 	return b
 }
 
+// domainKRLGroups builds KRL groups (each anchor CA pub → its revoked SSH
+// serials) from a domain's ledger. SSH-only; tls serials aren't in the KRL.
+func domainKRLGroups(domain string) []krlCAGroup {
+	revoked := map[string][]uint64{} // anchor -> serials
+	for _, e := range loadLedger(domain) {
+		if e.Revoked && e.Serial != 0 && e.Type != "tls" {
+			revoked[e.Anchor] = append(revoked[e.Anchor], e.Serial)
+		}
+	}
+	var groups []krlCAGroup
+	for anchor, sers := range revoked {
+		for _, role := range []string{"user", "host"} {
+			caPub, err := os.ReadFile(caPubPath(domain, role, anchor))
+			if err != nil {
+				continue
+			}
+			groups = append(groups, krlCAGroup{caPub: caPub, serials: sers})
+		}
+	}
+	return groups
+}
+
+// hostKRLBytes returns the KRL to push to a host trusting the given domains: the
+// published per-domain KRL file for a single domain, or a freshly merged KRL
+// (built from every trusted domain's ledger) for a multi-domain host — so
+// revocations reach multi-domain hosts too. nil if nothing is revoked.
+func hostKRLBytes(domains []string) []byte {
+	if len(domains) == 1 {
+		return singleKRL(domains)
+	}
+	var groups []krlCAGroup
+	for _, dn := range domains {
+		groups = append(groups, domainKRLGroups(dn)...)
+	}
+	if len(groups) == 0 {
+		return nil
+	}
+	b, err := buildKRL(groups, uint64(nowUnix()), "ykt merged KRL "+today())
+	if err != nil {
+		return nil
+	}
+	return b
+}
+
 // warnIfMultiDomain enforces the one-domain-per-host default: multiple domains
 // require an explicit opt-in and share the login principal, so a weaker
 // domain's cert can authenticate on a stronger domain's host.

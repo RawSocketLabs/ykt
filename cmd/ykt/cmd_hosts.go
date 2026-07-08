@@ -41,6 +41,18 @@ func inventoryAdd(name string, set map[string]string) {
 		fatal("--domain is required")
 	}
 	reg.domain(m.Domain) // validate
+	if v, ok := set["trust"]; ok {
+		var trust []string
+		for _, dn := range strings.Split(v, ",") {
+			dn = strings.TrimSpace(dn)
+			if dn == "" || dn == m.Domain {
+				continue
+			}
+			reg.domain(dn) // validate the additional trust domain exists
+			trust = append(trust, dn)
+		}
+		m.Trust = trust
+	}
 	if v, ok := set["address"]; ok {
 		m.Address = v
 	}
@@ -138,120 +150,124 @@ func cmdRemoteInstall(args []string, apply, all bool) {
 	validateSshdLogLevel()
 	reg, inv := loadRegistry(), loadInventory()
 
-	// --all: refresh every host in every domain. This is the revocation sweep —
-	// after `cert revoke`, run it so every host gets the current KRL, otherwise a
-	// revoked cert keeps working on hosts until the domain is re-installed.
+	// --all: install/refresh EVERY host. After `cert revoke`, run it so every
+	// host gets the current KRL and its full CA trust — otherwise a revoked cert
+	// keeps working until each host is re-installed by hand.
+	var machines []string
 	if all {
 		if len(args) > 0 {
-			fatal("--all sweeps every domain; don't also name a domain or machine")
+			fatal("--all installs every host; don't also name a domain or machine")
 		}
-		swept := 0
-		for _, domain := range reg.domainNames() {
-			machines := inv.inDomain(domain)
-			if len(machines) == 0 {
-				continue
-			}
-			installDomain(reg, inv, domain, machines, apply)
-			swept++
+		machines = sortedKeys(inv.Machines)
+		if len(machines) == 0 {
+			fatal("no machines in inventory — add some first (ykt data inventory add ...)")
 		}
-		if swept == 0 {
-			fatal("no machines in inventory for any domain — nothing to sweep")
+	} else {
+		if len(args) == 0 {
+			fatal("name a domain (or use --all): ykt remote install <domain> [machine...]")
 		}
-		if apply {
-			good("swept %d domain(s) — every host now carries the current CA trust + KRL", swept)
-		}
-		return
+		machines = resolveMachines(reg, inv, args[0], args[1:])
 	}
-
-	if len(args) == 0 {
-		fatal("name a domain (or use --all): ykt remote install <domain> [machine...]")
-	}
-	domain := args[0]
-	machines := resolveMachines(reg, inv, domain, args[1:])
-	installDomain(reg, inv, domain, machines, apply)
-}
-
-// installDomain installs/refreshes trust material on one domain's machines.
-func installDomain(reg *Registry, inv *Inventory, domain string, machines []string, apply bool) {
-	d := reg.domain(domain)
-	caPub, err := gatherHostCA([]string{domain})
-	if err != nil {
-		fatal("%v", err)
-	}
-	krlBytes := singleKRL([]string{domain})
 
 	if !apply {
-		printHostInstall(domain, d, inv, machines, caPub, krlBytes)
+		printHostInstall(reg, inv, machines)
 		return
 	}
-	applyHostInstall(domain, d, inv, machines, caPub, krlBytes)
+	applyHostInstall(reg, inv, machines)
+	if all {
+		good("installed on %d host(s) — each carries its full trust set + current KRL", len(machines))
+	}
 }
 
-// printHostInstall emits a copy-pasteable block per machine — the "just give
-// me the commands for each machine" mode, useful for consoles and new boxes
-// that can't be reached over SSH yet. The user-CA trust and KRL are installed
-// on EVERY host; the host certificate only where one has been signed.
-func printHostInstall(domain string, d Domain, inv *Inventory, machines []string, caPub, krlBytes []byte) {
-	head("Per-machine install commands for domain %q (nothing executed)", domain)
+// hostInstall is everything one host needs, computed from its FULL trust set
+// (primary domain + Trust) so an install never de-trusts a multi-domain host.
+type hostInstall struct {
+	dest     string
+	trust    []string
+	caPub    []byte
+	krl      []byte
+	cert     []byte
+	haveCert bool
+}
+
+func gatherHostInstall(reg *Registry, inv *Inventory, name string) hostInstall {
+	m := inv.Machines[name]
+	pd := reg.domain(m.Domain) // primary domain: ssh destination + host cert
+	trust := m.trustedDomains()
+	caPub, err := gatherHostCA(trust)
+	if err != nil {
+		fatal("[%s] %v", name, err)
+	}
+	cert, certErr := os.ReadFile(trustPath("dist", m.Domain, distHostCertName(name)))
+	return hostInstall{
+		dest:     m.sshDest(name, pd),
+		trust:    trust,
+		caPub:    caPub,
+		krl:      hostKRLBytes(trust),
+		cert:     cert,
+		haveCert: certErr == nil,
+	}
+}
+
+// printHostInstall emits copy-pasteable per-machine commands (for consoles / new
+// boxes not yet reachable over SSH). Each host gets its FULL trust set + KRL.
+func printHostInstall(reg *Registry, inv *Inventory, machines []string) {
+	head("Per-machine install commands (nothing executed)")
 	for _, name := range machines {
-		cert, certErr := os.ReadFile(trustPath("dist", domain, distHostCertName(name)))
-		dropIn := buildHostDropIn([]string{domain}, certErr == nil, krlBytes != nil)
-		fmt.Printf("\n%s\n", colorize(cBold, "──── "+name+" ("+inv.Machines[name].sshDest(name, d)+") ────"))
-		fmt.Printf("# 1. trusted user CA\nsudo tee %s > /dev/null <<'EOF'\n%sEOF\n", hostTrustCAFile, caPub)
-		if krlBytes != nil {
-			fmt.Printf("\n# 2. revocation list: copy pub/%s.krl to %s (binary — scp it)\n", domain, hostTrustKRLFile)
+		h := gatherHostInstall(reg, inv, name)
+		dropIn := buildHostDropIn(h.trust, h.haveCert, h.krl != nil)
+		fmt.Printf("\n%s\n", colorize(cBold, "──── "+name+" ("+h.dest+") · trusts "+strings.Join(h.trust, " ")+" ────"))
+		fmt.Printf("# 1. trusted user CA(s)\nsudo tee %s > /dev/null <<'EOF'\n%sEOF\n", hostTrustCAFile, h.caPub)
+		if h.krl != nil {
+			fmt.Printf("\n# 2. revocation list: scp the KRL (binary) to %s\n", hostTrustKRLFile)
 		}
-		if certErr == nil {
-			fmt.Printf("\n# 3. this machine's host certificate\nsudo tee %s > /dev/null <<'EOF'\n%sEOF\n", hostCertFile, cert)
+		if h.haveCert {
+			fmt.Printf("\n# 3. this machine's host certificate\nsudo tee %s > /dev/null <<'EOF'\n%sEOF\n", hostCertFile, h.cert)
 		} else {
 			fmt.Printf("\n# (no signed host cert yet — remote collect + cert sign to add one; TOFU until then)\n")
 		}
 		fmt.Printf("\n# 4. sshd drop-in\nsudo tee %s > /dev/null <<'EOF'\n%sEOF\n", hostTrustDropIn, dropIn)
 		fmt.Printf("\n# 5. validate BEFORE reload — do not skip\n%s\n", sshdReloadCommand)
-		fmt.Printf("\n# 6. from ANOTHER terminal: ssh %s  (expect: no password, one touch)\n",
-			inv.Machines[name].sshDest(name, d))
+		fmt.Printf("\n# 6. from ANOTHER terminal: ssh %s  (expect: no password, one touch)\n", h.dest)
 	}
 }
 
-func applyHostInstall(domain string, d Domain, inv *Inventory, machines []string, caPub, krlBytes []byte) {
-	head("P3c · Install on %q hosts (native SSH, one at a time, validated)", domain)
-	explain("Every host receives the user-CA trust and KRL; the host certificate",
+func applyHostInstall(reg *Registry, inv *Inventory, machines []string) {
+	head("Install on hosts (native SSH, one at a time, validated)")
+	explain("Each host receives its FULL user-CA trust set and KRL; the host cert",
 		"lands only where one is signed. sshd -t runs BEFORE reload in one step,",
-		"so a validation failure never reloads a broken config. Keep this session open.")
+		"and a rejected drop-in is rolled back. Keep this session open.")
 	for _, name := range machines {
-		m := inv.Machines[name]
-		dest := m.sshDest(name, d)
-		cert, certErr := os.ReadFile(trustPath("dist", domain, distHostCertName(name)))
-		haveCert := certErr == nil
-		if !haveCert {
+		h := gatherHostInstall(reg, inv, name)
+		if !h.haveCert {
 			note("[%s] no signed host cert yet — installing user-CA trust + KRL only (host stays TOFU)", name)
 		}
-		dropIn := buildHostDropIn([]string{domain}, haveCert, krlBytes != nil)
-		head("[%s] install via %s", name, dest)
+		dropIn := buildHostDropIn(h.trust, h.haveCert, h.krl != nil)
+		head("[%s] install via %s (trusts %s)", name, h.dest, strings.Join(h.trust, " "))
 		act("push trust files, validate sshd config, reload", "", func() error {
-			c, err := sshConnect(dest)
+			c, err := sshConnect(h.dest)
 			if err != nil {
 				return err
 			}
 			defer c.Close()
-			if err := remoteWriteFile(c, hostTrustCAFile, caPub, "0644"); err != nil {
+			if err := remoteWriteFile(c, hostTrustCAFile, h.caPub, "0644"); err != nil {
 				return fmt.Errorf("user CA file: %w", err)
 			}
-			if krlBytes != nil {
-				if err := remoteWriteFile(c, hostTrustKRLFile, krlBytes, "0644"); err != nil {
+			if h.krl != nil {
+				if err := remoteWriteFile(c, hostTrustKRLFile, h.krl, "0644"); err != nil {
 					return fmt.Errorf("KRL: %w", err)
 				}
 			}
-			if haveCert {
-				if err := remoteWriteFile(c, hostCertFile, cert, "0644"); err != nil {
+			if h.haveCert {
+				if err := remoteWriteFile(c, hostCertFile, h.cert, "0644"); err != nil {
 					return fmt.Errorf("host cert: %w", err)
 				}
 			}
 			if err := remoteWriteFile(c, hostTrustDropIn, []byte(dropIn), "0644"); err != nil {
 				return fmt.Errorf("drop-in: %w", err)
 			}
-			// validate-then-reload as one guarded command: reload never runs
-			// if sshd -t fails. On failure, roll back the drop-in so a later
+			// validate-then-reload as one guarded command: reload never runs if
+			// sshd -t fails, and a rejected drop-in is rolled back so a later
 			// reboot/reload can't activate a config that fails sshd -t.
 			if out, err := remoteRun(c, sshdReloadCommand); err != nil {
 				_, _ = remoteRun(c, "sudo rm -f "+shellQuote(hostTrustDropIn))
@@ -262,7 +278,7 @@ func applyHostInstall(domain string, d Domain, inv *Inventory, machines []string
 		if dryRun {
 			continue
 		}
-		warn("Before the next host: verify from ANOTHER terminal: ssh %s", dest)
+		warn("Before the next host: verify from ANOTHER terminal: ssh %s", h.dest)
 		warn("(expect: no host-key prompt, no password, one YubiKey touch)")
 		if !confirm("Verified — continue?") {
 			fatal("stopped; fix %s before proceeding", name)
