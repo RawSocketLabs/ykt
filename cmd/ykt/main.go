@@ -354,9 +354,27 @@ func newSetupSSHCmd() *cobra.Command {
 		Use:   "ssh",
 		Short: "Manage ~/.ssh/config as per-domain Include folders with per-host entries",
 	}
+	var includeAt string
+	initCmd := &cobra.Command{
+		Use:   "init",
+		Short: "Create the Include block + ~/.ssh/ykt domain folders + defaults",
+		Args:  cobra.NoArgs,
+		Run: func(c *cobra.Command, a []string) {
+			switch includeAt {
+			case "", "top":
+				cmdSSHConfigInit("top")
+			case "bottom":
+				cmdSSHConfigInit("bottom")
+			default:
+				fatal("--include must be 'top' or 'bottom'")
+			}
+		},
+	}
+	initCmd.Flags().StringVar(&includeAt, "include", "top",
+		"where to place the managed Include block in ~/.ssh/config: 'top' (ykt wins) or 'bottom' (your config wins)")
+
 	root.AddCommand(
-		&cobra.Command{Use: "init", Short: "Create the Include block + domain folders + defaults",
-			Args: cobra.NoArgs, Run: func(c *cobra.Command, a []string) { cmdSSHConfigInit() }},
+		initCmd,
 		&cobra.Command{Use: "sync", Short: "Regenerate host entries from inventory.toml",
 			Args: cobra.NoArgs, Run: func(c *cobra.Command, a []string) { cmdSSHConfigSync() }},
 		&cobra.Command{Use: "list", Short: "List managed host entries",

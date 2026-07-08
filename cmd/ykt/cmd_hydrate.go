@@ -96,15 +96,16 @@ func cmdSetupKey(args []string) {
 	}
 
 	// ---- wire config ---------------------------------------------------------
+	migrateOldLayout(domains)
 	for _, dn := range domains {
 		dn := dn
 		d := reg.domain(dn)
-		act(fmt.Sprintf("[%s] write ~/.ssh/%s/00-defaults.conf", dn, dn), "", func() error {
+		act(fmt.Sprintf("[%s] write ~/.ssh/%s/%s/00-defaults.conf", dn, sshManagedSubdir, dn), "", func() error {
 			return writeFileAtomic(filepath.Join(domainConfDir(dn), "00-defaults.conf"),
 				[]byte(domainDefaults(d, dn)), 0o600)
 		})
 	}
-	act("update ~/.ssh/config Include block", "", func() error { return upsertManagedIncludes(domains) })
+	act("update ~/.ssh/config Include block", "", func() error { return upsertManagedIncludes(domains, includePreserve) })
 
 	head("Hydrated — this machine is ready")
 	say("Connect with your certificate, e.g.:  ssh <user>@<host>.%s", reg.domain(domains[0]).BaseZone())

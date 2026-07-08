@@ -139,7 +139,7 @@ hardware.
 | Carry only the key | `ykt setup key [domain...]` | a fresh machine, key inserted (no files to bring) |
 | Host trust (local) | `sudo ykt init host <domain>` | ON the host (guided; optional password-off) |
 | Host trust (remote) | `ykt remote collect` / `ykt remote install [--apply] [--all]` | operator machine (`--all` re-pushes KRLs everywhere after a revoke) |
-| SSH config | `ykt setup ssh init\|add\|sync\|list\|remove` | client machines (~/.ssh per-domain folders) |
+| SSH config | `ykt setup ssh init [--include top\|bottom]\|add\|sync\|list\|remove` | client machines; all under `~/.ssh/ykt/<domain>/` (never collides) |
 | mTLS edge | `ykt setup caddy <domain...>` | generates Caddy client-auth config |
 | Test boxes | `ykt setup vps cloud-init\|install-script\|trust` | throwaway VPS onboarding |
 | Renew / revoke | `ykt cert renew <name> <domain...>` · `ykt cert revoke` · `ykt remote install --all` | renew (no reset) → sign; revoke → sweep |

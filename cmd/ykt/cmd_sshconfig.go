@@ -1,11 +1,12 @@
 package main
 
-// ssh-config: manage ~/.ssh/config as a structured tree. The top-level config
-// gets a managed Include block pulling in per-domain folders
-// (~/.ssh/<domain>/*.conf, one folder per configured domain); each holds a domain-defaults
-// file plus one file per host. Because each host entry sets an explicit
-// HostName + CertificateFile, `ssh <host>` works by short name and presents the
-// right domain cert — no TOFU, no auto-pair guessing.
+// ssh-config: manage ~/.ssh/config as a structured tree. Everything ykt writes
+// lives under ONE namespaced folder — ~/.ssh/ykt/<domain>/*.conf (one folder per
+// configured domain) — so it can never collide with folders you already keep in
+// ~/.ssh. The top-level config gets a marker-delimited Include block you can put
+// at the TOP (ykt entries win) or BOTTOM (your existing config wins). Each host
+// entry sets an explicit HostName + CertificateFile, so `ssh <host>` works by
+// short name and presents the right domain cert — no TOFU, no auto-pair guessing.
 
 import (
 	"fmt"
@@ -16,8 +17,17 @@ import (
 )
 
 const (
-	sshBeginMarker = "# >>> ykt managed includes (do not edit this block) >>>"
-	sshEndMarker   = "# <<< ykt managed includes <<<"
+	sshBeginMarker    = "# >>> ykt managed includes (do not edit this block) >>>"
+	sshEndMarker      = "# <<< ykt managed includes <<<"
+	sshManagedSubdir  = "ykt" // the single ~/.ssh folder ykt owns
+	sshManagedComment = "managed by ykt"
+)
+
+// Include-block placement in ~/.ssh/config.
+const (
+	includeTop      = "top"    // ykt entries take precedence over existing config
+	includeBottom   = "bottom" // existing config takes precedence; ykt fills gaps
+	includePreserve = ""       // keep the block wherever it already sits (add/sync)
 )
 
 func sshHomeDir() string {
@@ -28,7 +38,8 @@ func sshHomeDir() string {
 	return filepath.Join(h, ".ssh")
 }
 
-func domainConfDir(domain string) string { return filepath.Join(sshHomeDir(), domain) }
+func sshManagedDir() string              { return filepath.Join(sshHomeDir(), sshManagedSubdir) }
+func domainConfDir(domain string) string { return filepath.Join(sshManagedDir(), domain) }
 
 // ensureSSHDirs creates ~/.ssh and each domain folder with tight perms.
 func ensureSSHDirs(domains []string) {
@@ -56,20 +67,27 @@ Match host %s
 `, domain, d.HostPattern, dailyKeyName, installedSSHCertName(domain))
 }
 
-// managedIncludeBlock builds the Include block for the top-level config.
+// managedIncludeBlock builds the Include block for the top-level config. Paths
+// are relative to ~/.ssh and namespaced under ykt/, so they can't shadow a
+// user's own includes.
 func managedIncludeBlock(domains []string) string {
 	var b strings.Builder
 	b.WriteString(sshBeginMarker + "\n")
 	for _, dn := range domains {
-		fmt.Fprintf(&b, "Include %s/*.conf\n", dn)
+		fmt.Fprintf(&b, "Include %s/%s/*.conf\n", sshManagedSubdir, dn)
 	}
 	b.WriteString(sshEndMarker + "\n")
 	return b.String()
 }
 
-// upsertManagedIncludes inserts/replaces the managed block at the TOP of
-// ~/.ssh/config, preserving all existing (unmanaged) content below it.
-func upsertManagedIncludes(domains []string) error {
+// upsertManagedIncludes inserts/replaces the managed block in ~/.ssh/config,
+// preserving all unmanaged content. position controls placement:
+//   - includeTop:    block first, so ykt entries win for overlapping hosts
+//   - includeBottom: block last, so your existing config wins
+//   - includePreserve: keep the block wherever it currently is (add/sync)
+//
+// SSH takes the first value it sees for each option, so placement is precedence.
+func upsertManagedIncludes(domains []string, position string) error {
 	path := filepath.Join(sshHomeDir(), "config")
 	block := managedIncludeBlock(domains)
 	existing, err := os.ReadFile(path)
@@ -77,6 +95,7 @@ func upsertManagedIncludes(domains []string) error {
 		return err
 	}
 	content := string(existing)
+
 	if i := strings.Index(content, sshBeginMarker); i >= 0 {
 		j := strings.Index(content, sshEndMarker)
 		if j < 0 {
@@ -86,21 +105,82 @@ func upsertManagedIncludes(domains []string) error {
 		if j < len(content) && content[j] == '\n' {
 			j++
 		}
-		content = content[:i] + block + content[j:]
-	} else {
-		content = block + "\n" + content
+		if position == includePreserve {
+			// replace in place — don't move a block the user positioned
+			return writeFileAtomic(path, []byte(content[:i]+block+content[j:]), 0o600)
+		}
+		content = content[:i] + content[j:] // strip so we can reposition
+	} else if position == includePreserve {
+		position = includeTop // brand-new block: default to top
 	}
-	return writeFileAtomic(path, []byte(content), 0o600)
+
+	body := strings.Trim(content, "\n")
+	blk := strings.TrimRight(block, "\n")
+	var out string
+	switch {
+	case body == "":
+		out = blk + "\n"
+	case position == includeBottom:
+		out = body + "\n\n" + blk + "\n"
+	default:
+		out = blk + "\n\n" + body + "\n"
+	}
+	return writeFileAtomic(path, []byte(out), 0o600)
 }
 
-func cmdSSHConfigInit() {
+// migrateOldLayout moves pre-namespace ~/.ssh/<domain>/ folders that ykt created
+// into ~/.ssh/ykt/<domain>/. Only folders ykt clearly owns (their
+// 00-defaults.conf carries our marker) are touched; a user's same-named folder
+// is left untouched — which is the whole point of the ykt/ namespace.
+func migrateOldLayout(domains []string) {
+	if dryRun {
+		return
+	}
+	for _, dn := range domains {
+		oldDir := filepath.Join(sshHomeDir(), dn)
+		newDir := domainConfDir(dn)
+		if oldDir == newDir {
+			continue
+		}
+		b, err := os.ReadFile(filepath.Join(oldDir, "00-defaults.conf"))
+		if err != nil || !strings.Contains(string(b), sshManagedComment) {
+			continue // not an old ykt folder (missing, or the user's own dir)
+		}
+		entries, err := os.ReadDir(oldDir)
+		if err != nil || os.MkdirAll(newDir, 0o700) != nil {
+			continue
+		}
+		moved := 0
+		for _, e := range entries {
+			if e.IsDir() || !strings.HasSuffix(e.Name(), ".conf") {
+				continue
+			}
+			if os.Rename(filepath.Join(oldDir, e.Name()), filepath.Join(newDir, e.Name())) == nil {
+				moved++
+			}
+		}
+		if rem, _ := os.ReadDir(oldDir); len(rem) == 0 {
+			_ = os.Remove(oldDir)
+		}
+		if moved > 0 {
+			note("migrated %d file(s) from ~/.ssh/%s/ to ~/.ssh/%s/%s/", moved, dn, sshManagedSubdir, dn)
+		}
+	}
+}
+
+func cmdSSHConfigInit(position string) {
 	reg := loadRegistry()
 	domains := reg.domainNames()
-	head("Set up ~/.ssh structured config for domains: %s", strings.Join(domains, " "))
+	place := position
+	if place == includePreserve {
+		place = includeTop + " (default)"
+	}
+	head("Set up ~/.ssh/ykt structured config for domains: %s", strings.Join(domains, " "))
 	confirmPlan(append([]string{
-		"ensure ~/.ssh/config includes " + strings.Join(prefixEach(domains, "", "/*.conf"), ", "),
-		"create ~/.ssh/<domain>/ folders (0700)"},
-		prefixEach(domains, "write ~/.ssh/", "/00-defaults.conf")...))
+		"create ~/.ssh/ykt/<domain>/ folders (0700): " + strings.Join(domains, " "),
+		fmt.Sprintf("place the managed Include block at the %s of ~/.ssh/config", place)},
+		prefixEach(domains, "write ~/.ssh/ykt/", "/00-defaults.conf")...))
+	migrateOldLayout(domains)
 	ensureSSHDirs(domains)
 	for _, dn := range domains {
 		dn := dn
@@ -110,8 +190,15 @@ func cmdSSHConfigInit() {
 				[]byte(domainDefaults(d, dn)), 0o600)
 		})
 	}
-	act("update ~/.ssh/config Include block", "", func() error { return upsertManagedIncludes(domains) })
+	act(fmt.Sprintf("place ~/.ssh/config Include block (%s)", place), "", func() error {
+		return upsertManagedIncludes(domains, position)
+	})
 	head("Done")
+	if position == includeBottom {
+		say("Include is at the BOTTOM — your existing ~/.ssh/config entries take precedence.")
+	} else {
+		say("Include is at the TOP — ykt entries take precedence over existing config.")
+	}
 	say("Add hosts:  ykt setup ssh add <domain> <host> [--address <ip>] [--user <u>]")
 	say("Or sync from inventory:  ykt setup ssh sync")
 }
@@ -176,9 +263,11 @@ func cmdSSHConfigAdd(domain, host, address, user string, port int) {
 	reg := loadRegistry()
 	reg.domain(domain)
 	head("Add ssh config: %s/%s", domain, host)
-	// make sure the Include block + folders exist
-	if _, err := os.Stat(filepath.Join(sshHomeDir(), domain)); err != nil {
-		act("initialize ~/.ssh structure (Include block + folders)", "", func() error {
+	// make sure the Include block + folders exist (migrating any old layout,
+	// and preserving wherever the user placed the Include block)
+	if _, err := os.Stat(domainConfDir(domain)); err != nil {
+		act("initialize ~/.ssh/ykt structure (Include block + folders)", "", func() error {
+			migrateOldLayout(reg.domainNames())
 			ensureSSHDirs(reg.domainNames())
 			for _, dn := range reg.domainNames() {
 				d := reg.domain(dn)
@@ -187,7 +276,7 @@ func cmdSSHConfigAdd(domain, host, address, user string, port int) {
 					return werr
 				}
 			}
-			return upsertManagedIncludes(reg.domainNames())
+			return upsertManagedIncludes(reg.domainNames(), includePreserve)
 		})
 	}
 	act(fmt.Sprintf("write ~/.ssh/%s/%s.conf", domain, host), "", func() error {
@@ -210,7 +299,8 @@ func cmdSSHConfigSync() {
 	if len(inv.Machines) == 0 {
 		fatal("inventory is empty — add machines first (ykt data inventory add ...)")
 	}
-	head("Sync ~/.ssh host files from inventory (%d machines)", len(inv.Machines))
+	head("Sync ~/.ssh/ykt host files from inventory (%d machines)", len(inv.Machines))
+	migrateOldLayout(reg.domainNames())
 	var plan []string
 	for _, name := range sortedKeys(inv.Machines) {
 		m := inv.Machines[name]
