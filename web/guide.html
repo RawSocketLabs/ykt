@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Getting started · ykt docs</title>
+<style>
+  :root{
+    --bg:#f1f4f1;--surface:#fafcf9;--ink:#1b211d;--muted:#5b685f;--line:#d5ddd5;
+    --brass:#8a6c1f;--brass-ink:#6e5514;--teal:#2c665e;--slate:#3f5a8a;
+    --code:#e7ede7;--note:#f3efe1;--good:#2f7d55;--warn:#a5602a;
+    --mono:ui-monospace,"SF Mono","Cascadia Code",Menlo,Consolas,monospace;
+    --serif:"Charter","Bitstream Charter","Iowan Old Style",Georgia,serif;
+  }
+  @media (prefers-color-scheme:dark){:root{
+    --bg:#141815;--surface:#1b211d;--ink:#dde3dd;--muted:#91a096;--line:#2c352e;
+    --brass:#cba64b;--brass-ink:#d6b45f;--teal:#6cbcb0;--slate:#8aa4d6;
+    --code:#101512;--note:#241f10;--good:#6cc08a;--warn:#d9995a;}}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--serif);line-height:1.62}
+  .wrap{max-width:900px;margin:0 auto;padding:2.5rem 1.5rem 5rem}
+  a{color:var(--teal)}
+  code{font-family:var(--mono);font-size:.85em;background:var(--code);padding:.12em .38em;border-radius:4px}
+  header.mast{border-bottom:2px solid var(--ink);padding-bottom:1.4rem;margin-bottom:1.5rem}
+  .brand{font-family:var(--mono);font-weight:700;font-size:1.05rem;color:var(--brass);letter-spacing:.02em}
+  h1{font-family:var(--mono);font-size:clamp(1.6rem,3.6vw,2.2rem);line-height:1.18;margin:.5rem 0 .6rem;text-wrap:balance}
+  .lede{font-size:1.08rem;max-width:64ch;color:var(--ink);margin:0}
+  .docnav{display:flex;flex-wrap:wrap;gap:.5rem 1.1rem;margin-top:1rem;font-family:var(--mono);font-size:.8rem}
+  .docnav a{color:var(--muted);text-decoration:none}.docnav a:hover{color:var(--ink)}
+  section{margin-top:3rem}
+  .eyebrow{font-family:var(--mono);font-size:.72rem;letter-spacing:.14em;text-transform:uppercase;color:var(--brass-ink);margin:0 0 .35rem}
+  h2{font-family:var(--mono);font-size:1.35rem;margin:0 0 .9rem;text-wrap:balance}
+  h3{font-family:var(--mono);font-size:1rem;margin:1.8rem 0 .5rem}
+  p{margin:0 0 1rem;max-width:66ch}
+  .fig{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:1.1rem 1.1rem .4rem;margin:1.4rem 0 1.6rem;box-shadow:0 1px 2px rgba(27,33,29,.05)}
+  .fig .scroll{overflow-x:auto}
+  .fig svg{display:block;width:100%;height:auto;min-width:520px}
+  .cap{font-family:var(--mono);font-size:.72rem;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);border-top:1px solid var(--line);margin-top:.7rem;padding:.6rem .2rem .3rem}
+  .callout{background:var(--note);border-left:3px solid var(--brass);padding:.8rem 1.1rem;margin:0 0 1.2rem;max-width:66ch}
+  .callout .t{font-family:var(--mono);font-size:.68rem;letter-spacing:.1em;text-transform:uppercase;color:var(--brass-ink);display:block;margin-bottom:.3rem}
+  pre{background:var(--code);border-radius:8px;padding:1rem 1.1rem;overflow-x:auto;font-family:var(--mono);font-size:.85rem;line-height:1.55;margin:.4rem 0 1.2rem}
+  pre .c{color:var(--muted)} pre b{color:var(--brass-ink);font-weight:700}
+  ol.chain{counter-reset:s;list-style:none;padding:0;margin:1.2rem 0;display:grid;gap:.7rem}
+  ol.chain>li{counter-increment:s;position:relative;padding:.9rem 1rem .9rem 3.1rem;background:var(--surface);border:1px solid var(--line);border-radius:9px}
+  ol.chain>li::before{content:counter(s);position:absolute;left:.85rem;top:.9rem;font-family:var(--mono);font-weight:700;font-size:.8rem;color:var(--brass-ink);width:1.5rem;height:1.5rem;display:flex;align-items:center;justify-content:center;border:1px solid var(--line);border-radius:6px;background:var(--bg)}
+  ol.chain code{background:var(--code)}
+  .who{font-family:var(--mono);font-size:.68rem;text-transform:uppercase;letter-spacing:.06em;color:var(--slate);display:inline-block;margin-left:.5rem}
+  .ex{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:1.1rem 1.3rem;margin:1rem 0}
+  .ex h3{margin-top:0}
+  .legend{display:flex;flex-wrap:wrap;gap:.9rem 1.3rem;font-family:var(--mono);font-size:.74rem;color:var(--muted);margin:.2rem 0 0}
+  .legend span{display:inline-flex;align-items:center;gap:.4rem}
+  .sw{width:.8rem;height:.8rem;border-radius:3px;border:1px solid}
+  .sw-k{background:var(--note);border-color:var(--brass)} .sw-c{background:color-mix(in srgb,var(--teal) 13%,var(--bg));border-color:var(--teal)} .sw-a{background:color-mix(in srgb,var(--slate) 14%,var(--bg));border-color:var(--slate)}
+  /* svg tokens */
+  .b{fill:var(--bg);stroke:var(--muted)} .bs{fill:var(--surface);stroke:var(--line)}
+  .k{fill:var(--note);stroke:var(--brass)} .c{fill:color-mix(in srgb,var(--teal) 11%,var(--bg));stroke:var(--teal)} .a{fill:color-mix(in srgb,var(--slate) 12%,var(--bg));stroke:var(--slate)}
+  .th{font-family:var(--mono);font-size:12.5px;font-weight:700;fill:var(--ink)} .tt{font-family:var(--mono);font-size:11px;fill:var(--ink)} .ts{font-family:var(--mono);font-size:10px;fill:var(--muted)}
+  .tk{fill:var(--brass-ink)} .tc{fill:var(--teal)} .ta{fill:var(--slate)}
+  .ln{stroke:var(--muted);stroke-width:1.3;fill:none} .ld{stroke:var(--muted);stroke-width:1.1;fill:none;stroke-dasharray:4 4}
+  .lbad{stroke:var(--warn);stroke-width:1.2;fill:none;opacity:.8}
+  marker path{fill:var(--muted)}
+  footer{margin-top:3.5rem;padding-top:1.1rem;border-top:1px solid var(--line);font-family:var(--mono);font-size:.74rem;color:var(--muted)}
+</style></head>
+<body><div class="wrap">
+
+<header class="mast">
+  <div class="brand">🔑 ykt</div>
+  <h1>Getting started — an offline CA in your pocket</h1>
+  <p class="lede">ykt lets a pair of YubiKeys act as a certificate authority for SSH and mTLS: the
+  private keys are born on the hardware and never leave, you sign short-lived certificates at a brief
+  touch-gated session, and every machine trusts <em>one signer</em> instead of a pile of copied keys.</p>
+  <nav class="docnav">
+    <span style="color:var(--brass-ink)">Reference:</span>
+    <a href="/README.md">Overview</a><a href="/INSTALL.md">Install</a><a href="/RECOVERY.md">Recovery</a><a href="/SECURITY.md">Security</a>
+  </nav>
+</header>
+
+<!-- WHY -->
+<section>
+  <p class="eyebrow">01 · why this exists</p>
+  <h2>The problem: SSH access sprawls</h2>
+  <p>The default way to grant SSH access is to copy a public key into every server's
+  <code>authorized_keys</code>. That works until it doesn't: keys pile up on every host, there's no
+  expiry, rotating or removing one means editing <em>every</em> machine, and a leaked private key is
+  a standing liability with no clean off-switch. Passwords are worse.</p>
+  <div class="fig"><div class="scroll">
+    <svg viewBox="0 0 820 250" role="img" aria-label="Left: many keys copied into every server's authorized_keys, tangled. Right: every server trusts one CA; a client presents a certificate.">
+      <defs><marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10z"/></marker></defs>
+      <text class="ts" x="14" y="20">WITHOUT A CA — every key on every host</text>
+      <rect class="k" x="14" y="34" width="90" height="34" rx="6"/><text class="tt tk" x="26" y="55">key A</text>
+      <rect class="k" x="14" y="74" width="90" height="34" rx="6"/><text class="tt tk" x="26" y="95">key B</text>
+      <rect class="k" x="14" y="114" width="90" height="34" rx="6"/><text class="tt tk" x="26" y="135">key C</text>
+      <rect class="b" x="230" y="30" width="120" height="56" rx="6"/><text class="ts" x="244" y="52">host 1</text><text class="ts" x="244" y="70">authorized_keys</text>
+      <rect class="b" x="230" y="96" width="120" height="56" rx="6"/><text class="ts" x="244" y="118">host 2</text><text class="ts" x="244" y="136">authorized_keys</text>
+      <rect class="b" x="230" y="162" width="120" height="56" rx="6"/><text class="ts" x="244" y="184">host 3</text><text class="ts" x="244" y="202">authorized_keys</text>
+      <path class="lbad" d="M104 51 L230 55"/><path class="lbad" d="M104 91 L230 65"/><path class="lbad" d="M104 91 L230 120"/><path class="lbad" d="M104 131 L230 130"/><path class="lbad" d="M104 131 L230 190"/><path class="lbad" d="M104 51 L230 175"/>
+      <text class="ts" x="120" y="238" fill="var(--warn)">add / rotate / revoke a key = edit every host</text>
+
+      <line x1="410" y1="20" x2="410" y2="230" stroke="var(--line)"/>
+      <text class="ts" x="440" y="20">WITH ykt — every host trusts ONE signer</text>
+      <rect class="a" x="440" y="34" width="120" height="46" rx="6"/><text class="tt ta" x="454" y="55">CA (anchor)</text><text class="ts" x="454" y="72">offline YubiKey</text>
+      <rect class="c" x="440" y="150" width="150" height="46" rx="6"/><text class="tt tc" x="454" y="171">your certificate</text><text class="ts" x="454" y="188">signed, short-lived</text>
+      <path class="ln" d="M500 80 L515 150" marker-end="url(#ar)"/><text class="ts" x="520" y="120">signs</text>
+      <rect class="b" x="660" y="30" width="140" height="46" rx="6"/><text class="ts" x="674" y="52">host 1 · trusts CA</text>
+      <rect class="b" x="660" y="90" width="140" height="46" rx="6"/><text class="ts" x="674" y="112">host 2 · trusts CA</text>
+      <rect class="b" x="660" y="150" width="140" height="46" rx="6"/><text class="ts" x="674" y="172">host 3 · trusts CA</text>
+      <path class="ln" d="M590 168 C630 150 640 90 660 66" marker-end="url(#ar)"/><path class="ln" d="M590 173 L660 113" marker-end="url(#ar)"/><path class="ln" d="M590 178 L660 173" marker-end="url(#ar)"/>
+      <text class="ts" x="600" y="216" fill="var(--good)">sign once → every host accepts it, no host edits</text>
+    </svg>
+  </div><p class="cap">Fig. 1 — Certificates invert the model: hosts trust the signer, not a list of keys.</p></div>
+  <p><strong>ykt's answer:</strong> a small, <em>offline</em> certificate authority living on YubiKeys.
+  You sign short-lived certificates; hosts trust the CA once; the CA's private key never leaves the
+  hardware. Add a person, rotate a key, or revoke access without touching a single server.</p>
+</section>
+
+<!-- MODEL -->
+<section>
+  <p class="eyebrow">02 · how it's built</p>
+  <h2>The model — four moving parts</h2>
+  <p>Everything is one of four things. Keep them straight and the commands make sense.</p>
+  <div class="legend">
+    <span><span class="sw sw-a"></span> anchor — the offline CA YubiKey</span>
+    <span><span class="sw sw-k"></span> daily key — your everyday YubiKey</span>
+    <span><span class="sw sw-c"></span> certificate — public, signed, short-lived</span>
+  </div>
+  <div class="fig"><div class="scroll">
+    <svg viewBox="0 0 820 300" role="img" aria-label="Anchors provision per-domain CA keys; your daily key gets a certificate per domain; hosts trust the domain CA.">
+      <defs><marker id="ar2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10z"/></marker></defs>
+      <text class="ts" x="14" y="18">ANCHORS (offline, 1–2 of them = the CA)</text>
+      <rect class="a" x="14" y="28" width="150" height="56" rx="7"/><text class="tt ta" x="30" y="50">anchor a1</text><text class="ts" x="30" y="70">YubiKey · in a safe</text>
+      <rect class="a" x="180" y="28" width="150" height="56" rx="7"/><text class="tt ta" x="196" y="50">anchor a2</text><text class="ts" x="196" y="70">off-site backup</text>
+      <text class="ts" x="360" y="52">→ hold per-domain CA keys</text>
+      <text class="ts" x="360" y="70" fill="var(--muted)">(a "domain" = a trust boundary: work, home, …)</text>
+
+      <rect class="k" x="14" y="128" width="200" height="70" rx="7"/><text class="tt tk" x="30" y="152">your daily YubiKey</text><text class="ts" x="30" y="172">one FIDO2 key (id_yk)</text><text class="ts" x="30" y="188">+ mTLS keys in PIV slots</text>
+      <path class="ln" d="M90 84 L100 128" marker-end="url(#ar2)"/><text class="ts" x="106" y="112">the CA signs your key →</text>
+
+      <rect class="c" x="300" y="120" width="150" height="40" rx="6"/><text class="ts tc" x="314" y="145">cert · work domain</text>
+      <rect class="c" x="300" y="166" width="150" height="40" rx="6"/><text class="ts tc" x="314" y="191">cert · home domain</text>
+      <path class="ln" d="M214 155 L300 140" marker-end="url(#ar2)"/><path class="ln" d="M214 168 L300 186" marker-end="url(#ar2)"/>
+      <text class="ts" x="300" y="228">one key, a certificate per domain</text>
+
+      <rect class="b" x="560" y="120" width="240" height="86" rx="7"/><text class="ts" x="576" y="142">hosts in the "work" domain</text><text class="ts" x="576" y="164" fill="var(--muted)">/etc/ssh trusts the work CA</text><text class="ts" x="576" y="188">present cert → in, no password</text>
+      <path class="ln" d="M450 140 C510 140 520 150 560 158" marker-end="url(#ar2)"/><text class="ts" x="470" y="132">ssh + cert</text>
+    </svg>
+  </div><p class="cap">Fig. 2 — Anchors sign; your one daily key carries a cert per domain; hosts trust the domain's CA.</p></div>
+  <div class="callout"><span class="t">the security core</span>
+  <p>The CA's private keys are generated <em>on</em> the anchor YubiKey and can never be extracted.
+  A stolen laptop leaks nothing — the secret was never on it. Revocation is short lifetimes plus a
+  revocation list you push to hosts.</p></div>
+</section>
+
+<!-- SETUP CHAIN -->
+<section>
+  <p class="eyebrow">03 · the whole chain</p>
+  <h2>From zero to logging in</h2>
+  <p>This is the full sequence, start to finish. Steps 1–2 happen once per anchor; 3–5 once per
+  person; 6 once per host. The tag on each step says <em>where</em> it runs.</p>
+  <div class="fig"><div class="scroll">
+    <svg viewBox="0 0 820 150" role="img" aria-label="Flow: doctor, init ca, init user, cert sign, cert install, host trust, then ssh.">
+      <defs><marker id="ar3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10z"/></marker></defs>
+      <g>
+        <rect class="bs" x="8" y="50" width="96" height="46" rx="7"/><text class="tt" x="20" y="70">doctor</text><text class="ts" x="20" y="86">check machine</text>
+        <rect class="a" x="120" y="50" width="96" height="46" rx="7"/><text class="tt ta" x="132" y="70">init ca</text><text class="ts" x="132" y="86">CA genesis</text>
+        <rect class="k" x="232" y="50" width="96" height="46" rx="7"/><text class="tt tk" x="244" y="70">init user</text><text class="ts" x="244" y="86">enroll key</text>
+        <rect class="a" x="344" y="50" width="96" height="46" rx="7"/><text class="tt ta" x="356" y="70">cert sign</text><text class="ts" x="356" y="86">sign queue</text>
+        <rect class="c" x="456" y="50" width="100" height="46" rx="7"/><text class="tt tc" x="468" y="70">cert install</text><text class="ts" x="468" y="86">place certs</text>
+        <rect class="bs" x="572" y="50" width="104" height="46" rx="7"/><text class="tt" x="584" y="70">host trust</text><text class="ts" x="584" y="86">init/remote</text>
+        <rect class="c" x="692" y="50" width="112" height="46" rx="7"/><text class="tt tc" x="704" y="70">ssh web1</text><text class="ts" x="704" y="86">you're in ✓</text>
+        <path class="ln" d="M104 73 L120 73" marker-end="url(#ar3)"/><path class="ln" d="M216 73 L232 73" marker-end="url(#ar3)"/><path class="ln" d="M328 73 L344 73" marker-end="url(#ar3)"/><path class="ln" d="M440 73 L456 73" marker-end="url(#ar3)"/><path class="ln" d="M556 73 L572 73" marker-end="url(#ar3)"/><path class="ln" d="M676 73 L692 73" marker-end="url(#ar3)"/>
+      </g>
+      <text class="ts ta" x="120" y="30">anchor holder</text><text class="ts tk" x="232" y="120">your machine + daily key</text>
+    </svg>
+  </div><p class="cap">Fig. 3 — The setup chain. Colour = which key/role: blue anchor, brass daily key, teal certificate.</p></div>
+
+  <ol class="chain">
+    <li><code>ykt doctor</code> <span class="who">any machine</span><br>Check PC/SC, YubiKeys, tools, and USB interfaces. Run <code>ykt doctor --fix</code> to install what's missing.</li>
+    <li><code>ykt init ca a1</code> <span class="who">anchor holder</span><br>Genesis the CA on an anchor YubiKey (factory-resets its PIV, generates the CA keys on-device). Once per anchor.</li>
+    <li><code>ykt init user alice work</code> <span class="who">your machine + your daily key</span><br>Provision your everyday YubiKey and queue a signing request for the <code>work</code> domain.</li>
+    <li><code>ykt cert sign a1</code> <span class="who">anchor holder</span><br>Insert the anchor, review the queue, touch to sign. Produces your certificate(s).</li>
+    <li><code>ykt cert install alice work</code> <span class="who">your machine</span><br>Place the signed cert into <code>~/.ssh</code> (and stash it on the key so a new machine needs no files — see <code>setup key</code>).</li>
+    <li><code>sudo ykt init host work</code> <span class="who">on each server</span> — or <code>ykt remote install work --apply</code> <span class="who">from your machine</span><br>Make hosts trust the <code>work</code> CA.</li>
+    <li><code>ykt setup ssh init</code> then <code>ssh web1</code> <span class="who">your machine</span><br>Wire <code>~/.ssh/config</code> and connect — no password, one touch.</li>
+  </ol>
+  <div class="callout"><span class="t">not sure what's next?</span>
+  <p>Run <code>ykt flow</code> — it assesses the whole system, lists the pending steps in order, waits
+  for the right YubiKey, and runs each one with your approval. It's the guided version of the chain above.</p></div>
+</section>
+
+<!-- EXAMPLES -->
+<section>
+  <p class="eyebrow">04 · in practice</p>
+  <h2>A few worked examples</h2>
+
+  <div class="ex"><h3>① Get yourself logging into a host</h3>
+  <pre><span class="c"># on your machine (daily key inserted)</span>
+ykt <b>init user</b> alice work        <span class="c"># enroll + queue a request</span>
+<span class="c"># — hand off to the anchor holder —</span>
+ykt <b>cert sign</b> a1                 <span class="c"># sign the queue (anchor inserted)</span>
+<span class="c"># back on your machine</span>
+ykt <b>cert install</b> alice work     <span class="c"># place the cert in ~/.ssh</span>
+ykt <b>setup ssh</b> init &amp;&amp; ssh web1  <span class="c"># wire config + connect</span></pre></div>
+
+  <div class="ex"><h3>② Onboard a new server</h3>
+  <pre>ykt <b>data inventory add</b> web2 --domain work --address 203.0.113.9
+ykt <b>remote collect</b> work web2    <span class="c"># fetch + pin its host key</span>
+ykt <b>cert sign</b> a1                 <span class="c"># sign the host cert</span>
+ykt <b>remote install</b> work web2 --apply   <span class="c"># push trust over SSH</span></pre></div>
+
+  <div class="ex"><h3>③ New laptop — carry only the key</h3>
+  <pre><span class="c"># nothing to copy: the cert + key stub ride on the YubiKey</span>
+ykt <b>setup key</b>                    <span class="c"># reads them off the inserted key, writes ~/.ssh</span>
+ssh web1                        <span class="c"># done</span></pre></div>
+
+  <div class="ex"><h3>④ Rotate or revoke</h3>
+  <pre>ykt <b>cert expiring</b>                <span class="c"># what's due to lapse soon</span>
+ykt <b>init user</b> alice work --keep  <span class="c"># re-queue without resetting the key</span>
+ykt <b>cert revoke</b> work 1004        <span class="c"># revoke a serial → KRL</span>
+ykt <b>remote install</b> work --apply  <span class="c"># push the revocation everywhere</span></pre></div>
+</section>
+
+<footer>ykt · run <code>ykt docs</code> any time · full reference in the links up top · <code>ykt flow</code> walks you through the next step</footer>
+
+</div></body></html>

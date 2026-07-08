@@ -31,11 +31,18 @@ func cmdDocs(port int, noBrowser bool) {
 	}
 	sort.Slice(pages, func(i, j int) bool { return docRank(pages[i]) < docRank(pages[j]) })
 
+	guide, guideErr := ykt.Docs.ReadFile("web/guide.html") // illustrated landing page
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		name := strings.TrimPrefix(r.URL.Path, "/")
-		if name == "" || name == "index.html" {
-			http.Redirect(w, r, "/README.md", http.StatusFound)
+		if name == "" || name == "index.html" || name == "guide" {
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			if guideErr == nil {
+				_, _ = w.Write(guide)
+			} else {
+				http.Redirect(w, r, "/README.md", http.StatusFound)
+			}
 			return
 		}
 		src, err := ykt.Docs.ReadFile(name)
@@ -56,7 +63,7 @@ func cmdDocs(port int, noBrowser bool) {
 	if err != nil {
 		fatal("cannot start the docs server: %v", err)
 	}
-	url := "http://" + ln.Addr().String() + "/README.md"
+	url := "http://" + ln.Addr().String() + "/" // the illustrated guide landing
 
 	head("ykt docs")
 	say("Serving the bundled documentation at:")
@@ -110,6 +117,7 @@ func openBrowser(url string) error {
 
 func docPage(active string, pages []string, bodyHTML string) string {
 	var nav strings.Builder
+	nav.WriteString(`<a href="/">Guide</a>`) // illustrated landing, always first
 	for _, p := range pages {
 		cls := ""
 		if p == active {

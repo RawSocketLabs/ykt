@@ -6,7 +6,8 @@ package ykt
 
 import "embed"
 
-// Docs holds every Markdown document at the repo root, bundled into the binary.
+// Docs holds every Markdown document at the repo root plus the illustrated
+// getting-started guide (web/guide.html), bundled into the binary.
 //
-//go:embed *.md
+//go:embed *.md web/guide.html
 var Docs embed.FS
