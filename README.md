@@ -138,11 +138,14 @@ hardware.
 | Last mile | `ykt cert install <name> <domain...>` | the enrollee's machine |
 | Carry only the key | `ykt setup key [domain...]` | a fresh machine, key inserted (no files to bring) |
 | Host trust (local) | `sudo ykt init host <domain>` | ON the host (guided; optional password-off) |
-| Host trust (remote) | `ykt remote collect` / `ykt remote install [--apply]` | operator machine (inventory-driven) |
+| Host trust (remote) | `ykt remote collect` / `ykt remote install [--apply] [--all]` | operator machine (`--all` re-pushes KRLs everywhere after a revoke) |
 | SSH config | `ykt setup ssh init\|add\|sync\|list\|remove` | client machines (~/.ssh per-domain folders) |
 | mTLS edge | `ykt setup caddy <domain...>` | generates Caddy client-auth config |
 | Test boxes | `ykt setup vps cloud-init\|install-script\|trust` | throwaway VPS onboarding |
-| Ops | `ykt status` · `ykt flow` · `ykt cert expiring\|revoke` · `ykt data record\|inventory` | anywhere |
+| Renew / revoke | `ykt cert renew <name> <domain...>` · `ykt cert revoke` · `ykt remote install --all` | renew (no reset) → sign; revoke → sweep |
+| Store (git) | `ykt repo clone\|sync\|push\|status` | share the trust store between operators |
+| Verify / audit | `ykt verify attestation` · `ykt audit` | prove keys are on-device (offline); view the local action log |
+| Ops | `ykt status` · `ykt flow` · `ykt cert expiring` · `ykt data record\|inventory` | anywhere |
 
 `ykt help <command>` for details; `ykt completion <shell>` for tab completion.
 
