@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strconv"
+	"strings"
 	"testing"
 
 	"golang.org/x/crypto/ssh"
@@ -43,6 +44,28 @@ func TestIsTrustStore(t *testing.T) {
 	}
 	if !isTrustStore(dir) {
 		t.Error("a config.toml with a domain is a store")
+	}
+}
+
+// TestBuildHostDropIn: the drop-in reflects the trusted domains, cert, KRL, and
+// log level — and omits directives whose material is absent.
+func TestBuildHostDropIn(t *testing.T) {
+	old := sshdLogLevel
+	defer func() { sshdLogLevel = old }()
+	sshdLogLevel = "VERBOSE"
+
+	full := buildHostDropIn([]string{"work", "home"}, true, true)
+	for _, want := range []string{
+		"trusts domain(s): work home", "TrustedUserCAKeys " + hostTrustCAFile,
+		"HostCertificate " + hostCertFile, "RevokedKeys " + hostTrustKRLFile, "LogLevel VERBOSE",
+	} {
+		if !strings.Contains(full, want) {
+			t.Errorf("drop-in missing %q in:\n%s", want, full)
+		}
+	}
+	bare := buildHostDropIn([]string{"work"}, false, false)
+	if strings.Contains(bare, "HostCertificate") || strings.Contains(bare, "RevokedKeys") {
+		t.Errorf("drop-in should omit cert/KRL when absent:\n%s", bare)
 	}
 }
 

@@ -17,6 +17,11 @@ func withTrustHome(t *testing.T, dir string) {
 	t.Cleanup(func() { trustHome = old })
 }
 
+func readFixture(path string) (string, error) {
+	b, err := os.ReadFile(path)
+	return string(b), err
+}
+
 func writeFixture(t *testing.T, dir, rel, content string) {
 	t.Helper()
 	p := filepath.Join(dir, rel)
