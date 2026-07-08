@@ -99,17 +99,18 @@ func TestPathBuilders(t *testing.T) {
 	dir := t.TempDir()
 	withTrustHome(t, dir)
 	for _, tc := range []struct {
-		got, wantSuffix string
+		got, wantFile string
 	}{
-		{caPubPath("work", "user", "a1"), "pub/work_user_ca_a1.pub"},
-		{caPubPEMPath("a1", "work", "tls"), "pub/a1_work_tls_pub.pem"},
-		{clientCACertPath("work", "a1"), "pub/work_client_ca_a1.crt"},
-		{trustedUserCAPath("work"), "pub/work_trusted_user_ca.pub"},
-		{krlPath("work"), "pub/work.krl"},
-		{caAttestPath("a1", "work", "host"), "pub/a1_work_host_attest.pem"},
+		{caPubPath("work", "user", "a1"), "work_user_ca_a1.pub"},
+		{caPubPEMPath("a1", "work", "tls"), "a1_work_tls_pub.pem"},
+		{clientCACertPath("work", "a1"), "work_client_ca_a1.crt"},
+		{trustedUserCAPath("work"), "work_trusted_user_ca.pub"},
+		{krlPath("work"), "work.krl"},
+		{caAttestPath("a1", "work", "host"), "a1_work_host_attest.pem"},
 	} {
-		if !strings.HasSuffix(tc.got, tc.wantSuffix) {
-			t.Errorf("path = %q, want suffix %q", tc.got, tc.wantSuffix)
+		// OS-independent: <trustHome>/pub/<file>
+		if filepath.Base(tc.got) != tc.wantFile || filepath.Base(filepath.Dir(tc.got)) != "pub" {
+			t.Errorf("path = %q, want .../pub/%s", tc.got, tc.wantFile)
 		}
 	}
 }
