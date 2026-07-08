@@ -27,10 +27,12 @@ func main() {
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		PersistentPreRun: func(cmd *cobra.Command, args []string) {
-			// doctor (fresh machine) and `setup home` (records where the store
-			// IS) must run without an already-locatable store; everything else
-			// needs config.toml.
-			if cmd.Name() == "doctor" || cmd.Name() == "home" || cmd.Name() == "docs" {
+			// Most commands need config.toml; a few must run without a locatable
+			// store (doctor on a fresh machine, `setup home` recording where the
+			// store IS, `docs`, and cobra's help/completion). That policy lives
+			// on each command via the "store":"optional" annotation — not a name
+			// allowlist a future same-named subcommand could silently trip.
+			if storeOptional(cmd) {
 				initTrustHome()
 			} else {
 				requireTrustHome()
@@ -76,6 +78,27 @@ func main() {
 		fatal("%v", err)
 	}
 }
+
+// storeOptional reports whether cmd may run without a locatable trust store:
+// cobra's built-in help/completion machinery (including the hidden __complete
+// commands that fire on TAB), plus any command marked "store":"optional".
+func storeOptional(cmd *cobra.Command) bool {
+	if cmd.Annotations["store"] == "optional" {
+		return true
+	}
+	// Walk the ancestry: `completion` has leaf subcommands (bash/zsh/…), and the
+	// hidden __complete commands fire on TAB — all need no store.
+	for c := cmd; c != nil; c = c.Parent() {
+		switch c.Name() {
+		case "help", "completion", cobra.ShellCompRequestCmd, cobra.ShellCompNoDescRequestCmd:
+			return true
+		}
+	}
+	return false
+}
+
+// storeOptionalAnn marks a command as runnable without a trust store.
+var storeOptionalAnn = map[string]string{"store": "optional"}
 
 // newInitCmd groups the flows that bring a key or host into trust.
 func newInitCmd() *cobra.Command {
@@ -156,7 +179,8 @@ func newSetupCmd() *cobra.Command {
 		&cobra.Command{Use: "key [domain...]", Short: "Set up THIS machine from the inserted key alone (carry no files)",
 			Run: func(c *cobra.Command, a []string) { cmdSetupKey(a) }},
 		&cobra.Command{Use: "home [path]", Short: "Record this trust store so `ykt` finds it from any directory",
-			Args: cobra.MaximumNArgs(1), Run: func(c *cobra.Command, a []string) { cmdSetupHome(a) }},
+			Annotations: storeOptionalAnn,
+			Args:        cobra.MaximumNArgs(1), Run: func(c *cobra.Command, a []string) { cmdSetupHome(a) }},
 		newVPSCmd(),
 		newCaddyCmd(),
 	)
@@ -178,10 +202,11 @@ func newDocsCmd() *cobra.Command {
 	var port int
 	var noBrowser bool
 	c := &cobra.Command{
-		Use:   "docs",
-		Short: "Open the bundled documentation in a browser (offline, embedded)",
-		Args:  cobra.NoArgs,
-		Run:   func(c *cobra.Command, a []string) { cmdDocs(port, noBrowser) },
+		Use:         "docs",
+		Short:       "Open the bundled documentation in a browser (offline, embedded)",
+		Annotations: storeOptionalAnn,
+		Args:        cobra.NoArgs,
+		Run:         func(c *cobra.Command, a []string) { cmdDocs(port, noBrowser) },
 	}
 	c.Flags().IntVar(&port, "port", 0, "port to serve on (default: a free port chosen automatically)")
 	c.Flags().BoolVar(&noBrowser, "no-browser", false, "just serve; don't try to open a browser")
@@ -191,10 +216,11 @@ func newDocsCmd() *cobra.Command {
 func newDoctorCmd() *cobra.Command {
 	var fix bool
 	c := &cobra.Command{
-		Use:   "doctor",
-		Short: "Check PC/SC, YubiKeys, tools, and trust files; --fix installs what's missing",
-		Args:  cobra.NoArgs,
-		Run:   func(c *cobra.Command, a []string) { cmdDoctor(fix) },
+		Use:         "doctor",
+		Short:       "Check PC/SC, YubiKeys, tools, and trust files; --fix installs what's missing",
+		Annotations: storeOptionalAnn,
+		Args:        cobra.NoArgs,
+		Run:         func(c *cobra.Command, a []string) { cmdDoctor(fix) },
 	}
 	c.Flags().BoolVar(&fix, "fix", false, "plan + run package-manager commands for missing dependencies")
 	return c

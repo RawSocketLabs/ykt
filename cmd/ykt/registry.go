@@ -18,28 +18,51 @@ import (
 
 var trustHome string
 
-// initTrustHome locates the trust directory (marked by config.toml). It
-// returns false if none is found rather than fataling, so commands that can
-// run without a repo (e.g. doctor on a fresh machine) still work.
-func initTrustHome() bool {
+// isTrustStore reports whether dir is a ykt trust store (holds config.toml).
+// This is the single definition of "what marks a store".
+func isTrustStore(dir string) bool {
+	fi, err := os.Stat(filepath.Join(dir, "config.toml"))
+	return err == nil && !fi.IsDir()
+}
+
+// storeFromEnvOrCWD is the "where am I" answer: $YKT_HOME, else the nearest
+// config.toml walking up from the working directory. Excludes the binary
+// location and the recorded pointer — so it reflects the store you're standing
+// in, which is what `setup home` (no arg) records.
+func storeFromEnvOrCWD() string {
 	if h := os.Getenv("YKT_HOME"); h != "" {
-		trustHome = h
-		return true
-	}
-	// binary lives in trust/go/ or trust/bin/; config.toml marks the root
-	exe, err := os.Executable()
-	if err == nil {
-		for _, dir := range []string{filepath.Dir(exe), filepath.Dir(filepath.Dir(exe))} {
-			if _, err := os.Stat(filepath.Join(dir, "config.toml")); err == nil {
-				trustHome = dir
-				return true
-			}
-		}
+		return h
 	}
 	if wd, err := os.Getwd(); err == nil {
-		for d := wd; d != "/"; d = filepath.Dir(d) {
-			if _, err := os.Stat(filepath.Join(d, "config.toml")); err == nil {
-				trustHome = d
+		for d := wd; ; {
+			if isTrustStore(d) {
+				return d
+			}
+			parent := filepath.Dir(d)
+			if parent == d { // reached the filesystem root (POSIX or Windows)
+				break
+			}
+			d = parent
+		}
+	}
+	return ""
+}
+
+// initTrustHome locates the trust directory (marked by config.toml). It
+// returns false if none is found rather than fataling, so commands that can
+// run without a repo (e.g. doctor on a fresh machine) still work. Precedence:
+// the store you're standing in ($YKT_HOME / nearest config.toml) wins over a
+// store next to the binary, which wins over a recorded pointer.
+func initTrustHome() bool {
+	if dir := storeFromEnvOrCWD(); dir != "" {
+		trustHome = dir
+		return true
+	}
+	// a store next to the binary (dev builds placed inside a store)
+	if exe, err := os.Executable(); err == nil {
+		for _, dir := range []string{filepath.Dir(exe), filepath.Dir(filepath.Dir(exe))} {
+			if isTrustStore(dir) {
+				trustHome = dir
 				return true
 			}
 		}

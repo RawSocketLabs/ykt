@@ -6,8 +6,10 @@ package ykt
 
 import "embed"
 
-// Docs holds every Markdown document at the repo root plus the illustrated
-// getting-started guide (web/guide.html), bundled into the binary.
+// Docs holds the curated documentation set bundled into the binary and served
+// by `ykt docs`. The list is EXPLICIT (not a *.md glob) so a stray root
+// Markdown file — internal notes, an AGENTS.md, a scratch TODO — can never be
+// silently shipped or served by a security tool. Add new docs here on purpose.
 //
-//go:embed *.md web/guide.html
+//go:embed README.md INSTALL.md RECOVERY.md CONTRIBUTING.md SECURITY.md CODE_OF_CONDUCT.md CHANGELOG.md web/guide.html
 var Docs embed.FS

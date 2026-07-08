@@ -19,6 +19,9 @@ import (
 // Returns "" if it can't be determined (never fatals — callers handle "").
 func xdgConfigDir() string {
 	base := os.Getenv("XDG_CONFIG_HOME") // honored on every OS for consistency
+	if base != "" && !filepath.IsAbs(base) {
+		base = "" // XDG spec: a relative XDG_CONFIG_HOME must be ignored
+	}
 	if base == "" {
 		var err error
 		if base, err = os.UserConfigDir(); err != nil || base == "" {
@@ -39,8 +42,8 @@ func homePointerPath() string {
 // xdgStateDir is $XDG_STATE_HOME/ykt, else ~/.local/state/ykt (or
 // %LOCALAPPDATA%\ykt on Windows). For machine-local, non-synced data.
 func xdgStateDir() string {
-	if s := os.Getenv("XDG_STATE_HOME"); s != "" {
-		return filepath.Join(s, "ykt")
+	if s := os.Getenv("XDG_STATE_HOME"); s != "" && filepath.IsAbs(s) {
+		return filepath.Join(s, "ykt") // relative values ignored per XDG spec
 	}
 	if runtime.GOOS == "windows" {
 		if la := os.Getenv("LOCALAPPDATA"); la != "" {
@@ -74,13 +77,10 @@ func readHomePointer() string {
 		return ""
 	}
 	dir := strings.TrimSpace(string(data))
-	if dir == "" {
-		return ""
+	if dir != "" && isTrustStore(dir) {
+		return dir
 	}
-	if _, err := os.Stat(filepath.Join(dir, "config.toml")); err != nil {
-		return ""
-	}
-	return dir
+	return ""
 }
 
 // cmdSetupHome records the trust store so `ykt` finds it from any directory.
@@ -92,21 +92,28 @@ func cmdSetupHome(args []string) {
 			fatal("bad path %q: %v", args[0], err)
 		}
 		target = abs
-	} else if initTrustHome() {
-		target = trustHome
+	} else if dir := storeFromEnvOrCWD(); dir != "" {
+		// No arg → record the store you're standing in. Resolve via env/CWD
+		// only, NOT the pointer, so a stale pointer can't mask "not in a store".
+		target = dir
 	} else {
 		fatal("run this from inside your trust store (the dir with config.toml), or pass it: ykt setup home <path>")
 	}
-	if _, err := os.Stat(filepath.Join(target, "config.toml")); err != nil {
+	if !isTrustStore(target) {
 		fatal("no config.toml at %s — point this at your ykt trust-store directory", target)
 	}
-	if homePointerPath() == "" {
+	ptr := homePointerPath()
+	if ptr == "" {
 		fatal("cannot determine your config directory (is $HOME set?)")
 	}
-	if err := writeFileAtomic(homePointerPath(), []byte(target+"\n"), 0o644); err != nil {
+	if dryRun {
+		note("dry-run: would record trust store %s → %s (nothing written)", target, ptr)
+		return
+	}
+	if err := writeFileAtomic(ptr, []byte(target+"\n"), 0o644); err != nil {
 		fatal("%v", err)
 	}
-	good("recorded trust store → %s", homePointerPath())
+	good("recorded trust store → %s", ptr)
 	say("`ykt` now uses %s from any directory.", target)
 	say("(Overridden by $YKT_HOME, or by a nearer config.toml when you're inside another store.)")
 }

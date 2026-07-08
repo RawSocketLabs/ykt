@@ -29,20 +29,27 @@ func cmdDocs(port int, noBrowser bool) {
 	if err != nil || len(pages) == 0 {
 		fatal("no documentation is bundled in this build")
 	}
-	sort.Slice(pages, func(i, j int) bool { return docRank(pages[i]) < docRank(pages[j]) })
+	// Stable so unranked docs keep fs.Glob's lexical order deterministically.
+	sort.SliceStable(pages, func(i, j int) bool { return docRank(pages[i]) < docRank(pages[j]) })
 
-	guide, guideErr := ykt.Docs.ReadFile("web/guide.html") // illustrated landing page
+	guide, _ := ykt.Docs.ReadFile("web/guide.html") // illustrated landing page
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		name := strings.TrimPrefix(r.URL.Path, "/")
 		if name == "" || name == "index.html" || name == "guide" {
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
-			if guideErr == nil {
+			if len(guide) > 0 {
 				_, _ = w.Write(guide)
 			} else {
 				http.Redirect(w, r, "/README.md", http.StatusFound)
 			}
+			return
+		}
+		// Only Markdown docs are rendered as pages. Anything else (e.g. the
+		// guide's own web/guide.html, served at "/") is not a doc page.
+		if !strings.HasSuffix(name, ".md") {
+			http.NotFound(w, r)
 			return
 		}
 		src, err := ykt.Docs.ReadFile(name)
@@ -80,15 +87,15 @@ func cmdDocs(port int, noBrowser bool) {
 	}
 }
 
-// docRank orders the nav: README first, the how-to docs next, the rest after.
+// docOrder ranks the nav: README first, the how-to docs next, the rest after.
+var docOrder = map[string]int{
+	"README.md": 0, "INSTALL.md": 1, "RECOVERY.md": 2, "README-RSL.md": 3,
+	"CONTRIBUTING.md": 4, "SECURITY.md": 5, "CODE_OF_CONDUCT.md": 6, "CHANGELOG.md": 7,
+}
+
 func docRank(name string) int {
-	for i, n := range []string{
-		"README.md", "INSTALL.md", "RECOVERY.md", "README-RSL.md",
-		"CONTRIBUTING.md", "SECURITY.md", "CODE_OF_CONDUCT.md", "CHANGELOG.md",
-	} {
-		if name == n {
-			return i
-		}
+	if r, ok := docOrder[name]; ok {
+		return r
 	}
 	return 100
 }
@@ -105,14 +112,19 @@ func docTitle(name string) string {
 }
 
 func openBrowser(url string) error {
+	var c *exec.Cmd
 	switch runtime.GOOS {
 	case "darwin":
-		return exec.Command("open", url).Start()
+		c = exec.Command("open", url)
 	case "windows":
-		return exec.Command("rundll32", "url.dll,FileProtocolHandler", url).Start()
+		c = exec.Command("rundll32", "url.dll,FileProtocolHandler", url)
 	default:
-		return exec.Command("xdg-open", url).Start()
+		c = exec.Command("xdg-open", url)
 	}
+	if err := c.Start(); err != nil {
+		return err
+	}
+	return c.Process.Release() // detach; don't leave the launcher as a zombie
 }
 
 func docPage(active string, pages []string, bodyHTML string) string {

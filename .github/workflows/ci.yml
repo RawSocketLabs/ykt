@@ -12,9 +12,12 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+# Fork kill switch: set repository variable YKT_DISABLE_CI=true to turn all of
+# this off in a fork (or just disable Actions in the fork's settings).
 jobs:
   test:
     name: build & test (${{ matrix.os }})
+    if: ${{ vars.YKT_DISABLE_CI != 'true' }}
     strategy:
       fail-fast: false
       matrix:
@@ -38,10 +41,19 @@ jobs:
       - name: Vet
         run: go vet ./...
       - name: Test
-        run: go test -race ./...
+        shell: bash
+        # The race detector needs cgo; Windows builds are CGO_ENABLED=0 (pure
+        # syscall), so run the plain test suite there.
+        run: |
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            go test ./...
+          else
+            go test -race ./...
+          fi
 
   lint:
     name: lint & format
+    if: ${{ vars.YKT_DISABLE_CI != 'true' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -56,17 +68,25 @@ jobs:
           if [ -n "$unformatted" ]; then
             echo "These files need gofmt:"; echo "$unformatted"; exit 1
           fi
-      - uses: golangci/golangci-lint-action@v6
+      # v8 supports golangci-lint v2 (matches .golangci.yml `version: "2"`).
+      - uses: golangci/golangci-lint-action@v8
         with:
           version: latest
 
   secret-scan:
     name: secret scan
+    if: ${{ vars.YKT_DISABLE_CI != 'true' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - uses: gitleaks/gitleaks-action@v2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+      # The gitleaks GitHub Action requires a paid license for org repos; the
+      # binary is free (MIT). Build + run it directly.
+      - name: gitleaks
+        run: |
+          go install github.com/gitleaks/gitleaks/v8@latest
+          gitleaks dir . --redact --no-banner
