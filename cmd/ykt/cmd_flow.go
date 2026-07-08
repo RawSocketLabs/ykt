@@ -32,7 +32,11 @@ func cmdFlow() {
 			note("%s", n)
 		}
 		if len(actions) == 0 {
-			good("nothing actionable — system is current")
+			if len(notes) > 0 {
+				note("no CA-level steps pending — see the note(s) above")
+			} else {
+				good("nothing actionable — system is current")
+			}
 			return
 		}
 		say("\nPending steps, in order:")
@@ -61,22 +65,38 @@ func cmdFlow() {
 
 // waitForKeyPresent blocks until the YubiKey with the serial is connected.
 func waitForKeyPresent(serial, hint string) {
-	if n, err := parseUint32(serial); err == nil {
-		if presentQuiet(n) {
-			return
+	n, err := parseUint32(serial)
+	if err != nil {
+		// Don't silently proceed without confirming the right key is inserted.
+		if serial == "" || serial == "unset" {
+			note("no serial recorded for %s — make sure the right YubiKey is inserted", hint)
+		} else {
+			warn("registry has a malformed serial %q for %s — can't verify the right key is inserted", serial, hint)
 		}
-		fmt.Println(colorize(cYlw, fmt.Sprintf("  👉 INSERT %s (serial %s)…", hint, serial)))
-		for !presentQuiet(n) {
-			time.Sleep(500 * time.Millisecond)
-		}
-		good("detected")
+		return
 	}
+	if presentQuiet(n) {
+		return
+	}
+	fmt.Println(colorize(cYlw, fmt.Sprintf("  👉 INSERT %s (serial %s)…", hint, serial)))
+	for !presentQuiet(n) {
+		time.Sleep(500 * time.Millisecond)
+	}
+	good("detected")
 }
 
 // assessFlow inspects config, pub/, queue/, dist/, and this machine to build
 // the ordered to-do list.
 func assessFlow() (actions []flowAction, notes []string) {
 	reg := loadRegistry()
+	// Enrollment is the first user action, but it factory-resets the key — so
+	// surface it as a NOTE, not an auto-run step. Without this, a fresh operator
+	// who cloned a configured store is told "nothing actionable".
+	if h, err := os.UserHomeDir(); err == nil {
+		if _, err := os.Stat(filepath.Join(h, ".ssh", dailyKeyName+".pub")); err != nil {
+			notes = append(notes, "this machine has no daily key — enroll with `ykt init user <name> "+strings.Join(reg.domainNames(), " ")+"`")
+		}
+	}
 	hostname, _ := os.Hostname()
 	hostname = shortHost(hostname)
 	var deferred []flowAction // steps for keys/operators not at this machine

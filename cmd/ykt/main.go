@@ -436,10 +436,11 @@ func newBootstrapCmd() *cobra.Command {
 	}
 	sc.Flags().StringVar(&scUser, "user", "root", "login user your cert principal must match")
 	trust := &cobra.Command{
-		Use:   "trust <ip-or-host>",
-		Short: "Pin a box's host key to known_hosts (TOFU-confirm) so connecting won't prompt",
-		Args:  cobra.ExactArgs(1),
-		Run:   func(c *cobra.Command, a []string) { cmdBootstrapTrust(a[0]) },
+		Use:         "trust <ip-or-host>",
+		Short:       "Pin a box's host key to known_hosts (TOFU-confirm) so connecting won't prompt",
+		Annotations: storeOptionalAnn, // only pins a host key; needs no trust store
+		Args:        cobra.ExactArgs(1),
+		Run:         func(c *cobra.Command, a []string) { cmdBootstrapTrust(a[0]) },
 	}
 	bootstrap.AddCommand(ci, sc, trust)
 	return bootstrap

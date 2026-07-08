@@ -37,10 +37,13 @@ func colorize(c, s string) string {
 	return c + s + cRst
 }
 
+// say and head are the command's OUTPUT (data + its framing) → stdout, so
+// `ykt status | grep` works. note/good/warn/explain are advisory progress →
+// stderr, so they never pollute piped output.
 func say(f string, a ...any)  { fmt.Printf(f+"\n", a...) }
-func note(f string, a ...any) { fmt.Println(colorize(cDim, "· "+fmt.Sprintf(f, a...))) }
-func good(f string, a ...any) { fmt.Println(colorize(cGrn, "✔ "+fmt.Sprintf(f, a...))) }
-func warn(f string, a ...any) { fmt.Println(colorize(cYlw, "! "+fmt.Sprintf(f, a...))) }
+func note(f string, a ...any) { fmt.Fprintln(os.Stderr, colorize(cDim, "· "+fmt.Sprintf(f, a...))) }
+func good(f string, a ...any) { fmt.Fprintln(os.Stderr, colorize(cGrn, "✔ "+fmt.Sprintf(f, a...))) }
+func warn(f string, a ...any) { fmt.Fprintln(os.Stderr, colorize(cYlw, "! "+fmt.Sprintf(f, a...))) }
 
 func fatal(f string, a ...any) {
 	fmt.Fprintln(os.Stderr, colorize(cRed, "✘ "+fmt.Sprintf(f, a...)))
@@ -54,7 +57,7 @@ func head(f string, a ...any) {
 
 func explain(lines ...string) {
 	for _, l := range lines {
-		fmt.Println(colorize(cDim, l))
+		fmt.Fprintln(os.Stderr, colorize(cDim, l))
 	}
 }
 

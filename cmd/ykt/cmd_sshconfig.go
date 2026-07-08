@@ -142,20 +142,31 @@ func migrateOldLayout(domains []string) {
 		if oldDir == newDir {
 			continue
 		}
-		b, err := os.ReadFile(filepath.Join(oldDir, "00-defaults.conf"))
-		if err != nil || !strings.Contains(string(b), sshManagedComment) {
-			continue // not an old ykt folder (missing, or the user's own dir)
-		}
 		entries, err := os.ReadDir(oldDir)
-		if err != nil || os.MkdirAll(newDir, 0o700) != nil {
+		if err != nil {
 			continue
 		}
-		moved := 0
+		// The dir is ours only if at least ONE .conf carries our marker — so a
+		// user's same-named folder is never touched. If it's ours, migrate every
+		// .conf (not just 00-defaults), so a deleted defaults file can't orphan
+		// per-host entries.
+		owned := false
+		var confs []string
 		for _, e := range entries {
 			if e.IsDir() || !strings.HasSuffix(e.Name(), ".conf") {
 				continue
 			}
-			if os.Rename(filepath.Join(oldDir, e.Name()), filepath.Join(newDir, e.Name())) == nil {
+			confs = append(confs, e.Name())
+			if b, rerr := os.ReadFile(filepath.Join(oldDir, e.Name())); rerr == nil && strings.Contains(string(b), sshManagedComment) {
+				owned = true
+			}
+		}
+		if !owned || os.MkdirAll(newDir, 0o700) != nil {
+			continue
+		}
+		moved := 0
+		for _, name := range confs {
+			if os.Rename(filepath.Join(oldDir, name), filepath.Join(newDir, name)) == nil {
 				moved++
 			}
 		}
@@ -279,7 +290,7 @@ func cmdSSHConfigAdd(domain, host, address, user string, port int) {
 			return upsertManagedIncludes(reg.domainNames(), includePreserve)
 		})
 	}
-	act(fmt.Sprintf("write ~/.ssh/%s/%s.conf", domain, host), "", func() error {
+	act(fmt.Sprintf("write ~/.ssh/%s/%s/%s.conf", sshManagedSubdir, domain, host), "", func() error {
 		return writeHostConf(reg, domain, host, address, user, port)
 	})
 	d := reg.domain(domain)
@@ -304,7 +315,7 @@ func cmdSSHConfigSync() {
 	var plan []string
 	for _, name := range sortedKeys(inv.Machines) {
 		m := inv.Machines[name]
-		plan = append(plan, fmt.Sprintf("~/.ssh/%s/%s.conf → %s", m.Domain, name, m.sshDest(name, reg.domain(m.Domain))))
+		plan = append(plan, fmt.Sprintf("~/.ssh/%s/%s/%s.conf → %s", sshManagedSubdir, m.Domain, name, m.sshDest(name, reg.domain(m.Domain))))
 	}
 	confirmPlan(plan)
 	for _, name := range sortedKeys(inv.Machines) {
@@ -315,7 +326,7 @@ func cmdSSHConfigSync() {
 		if host == "" {
 			host = name + "." + d.BaseZone()
 		}
-		act(fmt.Sprintf("[%s] write ~/.ssh/%s/%s.conf", m.Domain, m.Domain, name), "", func() error {
+		act(fmt.Sprintf("[%s] write ~/.ssh/%s/%s/%s.conf", m.Domain, sshManagedSubdir, m.Domain, name), "", func() error {
 			return writeHostConf(reg, m.Domain, name, host, m.SSHUser, 0)
 		})
 	}

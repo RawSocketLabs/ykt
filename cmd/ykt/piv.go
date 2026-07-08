@@ -88,6 +88,18 @@ func listYubiKeys() (map[uint32]string, error) {
 //     that keeps an anchor operation off a daily-carry key).
 func pickYubiKey(expected string) (*piv.YubiKey, uint32) {
 	head("YubiKey selection")
+	if dryRun {
+		// Honor the contract: --dry-run touches no hardware. Don't enumerate or
+		// open any card; return the expected serial (if any) as a placeholder.
+		note("dry-run: not touching any YubiKey")
+		var chosen uint32
+		if expected != "" && expected != "unset" {
+			if n, err := strconv.ParseUint(expected, 10, 32); err == nil {
+				chosen = uint32(n)
+			}
+		}
+		return nil, chosen
+	}
 	keys, err := listYubiKeys()
 	if err != nil || len(keys) == 0 {
 		if dryRun {
