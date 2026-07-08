@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -19,8 +20,11 @@ func TestWriteFileAtomic(t *testing.T) {
 	if err != nil || string(b) != "hello" {
 		t.Fatalf("content = %q, err = %v", b, err)
 	}
-	if fi, _ := os.Stat(p); fi.Mode().Perm() != 0o600 {
-		t.Errorf("mode = %v, want 0600", fi.Mode().Perm())
+	// Windows doesn't honor Unix perm bits (chmod only toggles read-only).
+	if runtime.GOOS != "windows" {
+		if fi, _ := os.Stat(p); fi.Mode().Perm() != 0o600 {
+			t.Errorf("mode = %v, want 0600", fi.Mode().Perm())
+		}
 	}
 	entries, _ := os.ReadDir(filepath.Dir(p))
 	for _, e := range entries {
