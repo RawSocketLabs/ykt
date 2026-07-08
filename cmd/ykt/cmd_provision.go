@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 
@@ -310,6 +311,11 @@ func cmdInitUser(args []string, keep, verifyRequired bool) {
 	}
 
 	sshArgv := caps.sshKeygenArgs(keyFile, verifyRequired)
+	if runtime.GOOS == "windows" {
+		note("Windows: FIDO2 key generation needs a recent Win32-OpenSSH with security-key")
+		note("support; the security key prompt appears via the Windows credential UI. If")
+		note("ssh-keygen reports 'invalid format' or no device, update OpenSSH first.")
+	}
 	if !caps.ResidentSSH {
 		note("this key's firmware (%d.%d.%d) predates resident Ed25519 sk keys — using %s",
 			caps.Version[0], caps.Version[1], caps.Version[2], caps.SSHKeyType)

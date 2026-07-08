@@ -6,10 +6,14 @@ on:
     tags: ['v*']         # or release a manually/seed-pushed tag
   workflow_dispatch: {}
 
-# Only contents:write is needed (create tags + releases). No pull-request
-# creation — so this works even where the org disallows Actions creating PRs.
+# contents:write creates tags + releases (no pull-request creation, so this
+# works even where the org disallows Actions creating PRs). id-token:write is the
+# OIDC identity for keyless cosign signatures + build provenance;
+# attestations:write records the SLSA provenance.
 permissions:
   contents: write
+  id-token: write
+  attestations: write
 
 jobs:
   # On a push to main (canonical repo only), compute the next semver from
@@ -79,6 +83,29 @@ jobs:
           else
             shasum -a 256 "${{ matrix.asset }}" > "${{ matrix.asset }}.sha256"
           fi
+      # Keyless signature (records a public entry in the Sigstore transparency
+      # log, tied to this workflow's identity). Verify with:
+      #   cosign verify-blob --bundle <asset>.cosign.bundle \
+      #     --certificate-identity-regexp 'RawSocketLabs/ykt' \
+      #     --certificate-oidc-issuer https://token.actions.githubusercontent.com <asset>
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v3
+      - name: Sign (keyless)
+        shell: bash
+        run: cosign sign-blob --yes "${{ matrix.asset }}" --bundle "${{ matrix.asset }}.cosign.bundle"
+      # SBOM (best-effort — a syft hiccup must not fail a release).
+      - name: SBOM
+        continue-on-error: true
+        uses: anchore/sbom-action@v0
+        with:
+          file: ${{ matrix.asset }}
+          format: spdx-json
+          output-file: ${{ matrix.asset }}.sbom.spdx.json
+      # SLSA build provenance, verifiable with `gh attestation verify <asset>`.
+      - name: Provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: ${{ matrix.asset }}
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
@@ -87,3 +114,5 @@ jobs:
           files: |
             ${{ matrix.asset }}
             ${{ matrix.asset }}.sha256
+            ${{ matrix.asset }}.cosign.bundle
+            ${{ matrix.asset }}.sbom.spdx.json

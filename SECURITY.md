@@ -38,6 +38,26 @@ on YubiKeys and never leave the hardware. Useful context for reports:
   YubiKey plus its PIN; issues in third-party dependencies (report upstream, but
   do tell us so we can pin/patch).
 
+## Verifying releases
+
+Release binaries are checksummed, keyless-signed with [cosign](https://github.com/sigstore/cosign)
+(recorded in the Sigstore transparency log), carry an SPDX SBOM, and have SLSA
+build provenance. To verify a downloaded binary:
+
+```
+# checksum
+sha256sum -c ykt-linux-amd64.sha256
+
+# cosign signature (identity = the release workflow)
+cosign verify-blob ykt-linux-amd64 \
+  --bundle ykt-linux-amd64.cosign.bundle \
+  --certificate-identity-regexp 'https://github.com/RawSocketLabs/ykt/.github/workflows/release.yml@.*' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+
+# build provenance (needs the gh CLI)
+gh attestation verify ykt-linux-amd64 --repo RawSocketLabs/ykt
+```
+
 ## Handling secrets
 
 Never include PINs, PUKs, private keys, or `~/.ssh` private material in a report.
