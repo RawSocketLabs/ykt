@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	ykt "github.com/RawSocketLabs/ykt"
@@ -70,6 +71,45 @@ func TestExpiringCerts(t *testing.T) {
 	}
 	if ex[0].Entry.Identity != "soon" {
 		t.Errorf("wrong entry surfaced: %+v", ex[0].Entry)
+	}
+}
+
+// TestAppendLedgerAtomic: appends preserve prior rows + the header (read-modify-
+// write), so nothing is lost.
+func TestAppendLedgerAtomic(t *testing.T) {
+	dir := t.TempDir()
+	withTrustHome(t, dir)
+	mk := func(s uint64, id string) LedgerEntry {
+		return LedgerEntry{Serial: s, Type: "user", Identity: id, Anchor: "a1", Signed: "2026-01-01", Expires: "2027-01-01", File: id + ".pub"}
+	}
+	if err := appendLedger("work", mk(1001, "alice")); err != nil {
+		t.Fatal(err)
+	}
+	if err := appendLedger("work", mk(1002, "bob")); err != nil {
+		t.Fatal(err)
+	}
+	e := loadLedger("work")
+	if len(e) != 2 || e[0].Serial != 1001 || e[1].Serial != 1002 {
+		t.Fatalf("append lost a row: %+v", e)
+	}
+	if raw, _ := os.ReadFile(ledgerPath("work")); !strings.HasPrefix(string(raw), "#serial") {
+		t.Error("header missing after append")
+	}
+}
+
+// TestLoadLedgerDuplicateSerial: a reused serial still loads but is flagged.
+func TestLoadLedgerDuplicateSerial(t *testing.T) {
+	dir := t.TempDir()
+	withTrustHome(t, dir)
+	delete(ledgerWarned, "work")
+	writeFixture(t, dir, "index/work.tsv",
+		"1001\tuser\talice\talice\ta1\t2026-01-01\t2027-01-01\tf1\n"+
+			"1001\tuser\tbob\tbob\ta1\t2026-01-01\t2027-01-01\tf2\n")
+	if e := loadLedger("work"); len(e) != 2 {
+		t.Fatalf("both rows should load, got %d", len(e))
+	}
+	if !ledgerWarned["work"] {
+		t.Error("a duplicate serial should be flagged as an anomaly")
 	}
 }
 

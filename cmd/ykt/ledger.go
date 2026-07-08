@@ -27,56 +27,82 @@ type LedgerEntry struct {
 
 func ledgerPath(domain string) string { return trustPath("index", domain+".tsv") }
 
+// ledgerWarned suppresses repeat anomaly warnings for the same domain within one
+// process (loadLedger is called many times per command).
+var ledgerWarned = map[string]bool{}
+
 func loadLedger(domain string) []LedgerEntry {
 	raw, err := os.ReadFile(ledgerPath(domain))
 	if err != nil {
 		return nil
 	}
 	var out []LedgerEntry
-	for _, line := range strings.Split(string(raw), "\n") {
+	seen := map[uint64]bool{}
+	var anomalies []string
+	for i, line := range strings.Split(string(raw), "\n") {
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
 		f := strings.Split(line, "\t")
 		if len(f) < 8 {
+			anomalies = append(anomalies, fmt.Sprintf("line %d: only %d fields", i+1, len(f)))
 			continue
 		}
 		e := LedgerEntry{Type: f[1], Identity: f[2], Principals: f[3],
 			Anchor: f[4], Signed: f[5], Expires: f[6], File: f[7]}
-		if n, err := strconv.ParseUint(f[0], 10, 64); err == nil {
-			e.Serial = n
+		if f[0] != "-" { // "-" is an intentional no-serial (legacy) row
+			n, perr := strconv.ParseUint(f[0], 10, 64)
+			switch {
+			case perr != nil:
+				anomalies = append(anomalies, fmt.Sprintf("line %d: unparseable serial %q", i+1, f[0]))
+			case seen[n]:
+				anomalies = append(anomalies, fmt.Sprintf("line %d: duplicate serial %d", i+1, n))
+				e.Serial = n
+			default:
+				e.Serial = n
+				seen[n] = true
+			}
 		}
 		if len(f) >= 9 && f[8] == "REVOKED" {
 			e.Revoked = true
 		}
 		out = append(out, e)
 	}
+	if len(anomalies) > 0 && !ledgerWarned[domain] {
+		ledgerWarned[domain] = true
+		warn("ledger index/%s.tsv has anomalies (serial-reuse risk) — %s", domain, strings.Join(anomalies, "; "))
+	}
 	return out
 }
 
+// appendLedger appends a row atomically (read → append → temp+rename), so a
+// crash mid-write can't leave a truncated final row that loadLedger would skip —
+// which would let the next issuance reuse that serial.
 func appendLedger(domain string, e LedgerEntry) error {
 	if err := os.MkdirAll(trustPath("index"), 0o755); err != nil {
 		return err
 	}
 	path := ledgerPath(domain)
-	if _, err := os.Stat(path); os.IsNotExist(err) {
-		header := "#serial\ttype\tidentity\tprincipals\tanchor\tsigned\texpires\tfile\n"
-		if err := os.WriteFile(path, []byte(header), 0o644); err != nil {
-			return err
-		}
-	}
-	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o644)
-	if err != nil {
+	existing, err := os.ReadFile(path)
+	if err != nil && !os.IsNotExist(err) {
 		return err
 	}
-	defer f.Close()
+	var b strings.Builder
+	if len(existing) == 0 {
+		b.WriteString("#serial\ttype\tidentity\tprincipals\tanchor\tsigned\texpires\tfile\n")
+	} else {
+		b.Write(existing)
+		if existing[len(existing)-1] != '\n' {
+			b.WriteByte('\n')
+		}
+	}
 	serial := "-"
 	if e.Serial != 0 {
 		serial = strconv.FormatUint(e.Serial, 10)
 	}
-	_, err = fmt.Fprintf(f, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+	fmt.Fprintf(&b, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
 		serial, e.Type, e.Identity, e.Principals, e.Anchor, e.Signed, e.Expires, e.File)
-	return err
+	return writeFileAtomic(path, []byte(b.String()), 0o644)
 }
 
 // markRevoked marks every given serial's row REVOKED in one read+write pass.
