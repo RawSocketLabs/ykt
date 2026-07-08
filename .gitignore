@@ -1,0 +1,31 @@
+# build output (anchored to root so they never match the cmd/ykt/ source dir)
+/bin/
+/dist/
+*.exe
+/ykt
+/ykt-*-amd64
+/ykt-*-arm64
+/ykt-*.exe
+
+# operator data — NEVER commit to the tool repo. Your CA material lives in your
+# own private fork/checkout, not here. (config.toml.example is the template.)
+/config.toml
+/inventory.toml
+/pub/
+/index/
+/queue/
+/a*.json
+/ykt.log
+
+# secrets never belong in git at all
+*.age
+*.pem
+*.key
+*.puk
+
+# editor / OS
+*.tmp
+*.swp
+.DS_Store
+.idea/
+.vscode/

@@ -1,0 +1,80 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  # release-please reads Conventional Commits on main, maintains a "release PR"
+  # that bumps the version + CHANGELOG, and — when that PR is merged — tags the
+  # release and creates the GitHub Release.
+  release-please:
+    runs-on: ubuntu-latest
+    outputs:
+      release_created: ${{ steps.rp.outputs.release_created }}
+      tag_name: ${{ steps.rp.outputs.tag_name }}
+    steps:
+      - uses: googleapis/release-please-action@v4
+        id: rp
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+  # Once a release exists, build a native binary on each OS and attach it.
+  # Native runners avoid cgo cross-compilation (piv-go needs cgo on Linux/macOS).
+  binaries:
+    needs: release-please
+    if: ${{ needs.release-please.outputs.release_created == 'true' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            asset: ykt-linux-amd64
+            cgo: '1'
+            setup: sudo apt-get update && sudo apt-get install -y libpcsclite-dev
+          - os: macos-latest
+            asset: ykt-darwin-arm64
+            cgo: '1'
+            setup: 'true'
+          - os: windows-latest
+            asset: ykt-windows-amd64.exe
+            cgo: '0'
+            setup: 'true'
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          check-latest: true
+      - name: Platform setup
+        shell: bash
+        run: ${{ matrix.setup }}
+      - name: Build
+        shell: bash
+        env:
+          CGO_ENABLED: ${{ matrix.cgo }}
+          TAG: ${{ needs.release-please.outputs.tag_name }}
+        run: |
+          go build -trimpath -ldflags "-s -w -X main.version=${TAG}" -o "${{ matrix.asset }}" ./cmd/ykt
+      - name: Checksum
+        shell: bash
+        run: |
+          if command -v sha256sum >/dev/null; then
+            sha256sum "${{ matrix.asset }}" > "${{ matrix.asset }}.sha256"
+          else
+            shasum -a 256 "${{ matrix.asset }}" > "${{ matrix.asset }}.sha256"
+          fi
+      - name: Attach to release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.release-please.outputs.tag_name }}
+        run: gh release upload "${TAG}" "${{ matrix.asset }}" "${{ matrix.asset }}.sha256" --clobber

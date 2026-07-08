@@ -1,0 +1,45 @@
+# golangci-lint config for ykt. Kept focused: correctness and hygiene
+# linters that pay their way on a small security-sensitive CLI, without noise.
+version: "2"
+
+linters:
+  enable:
+    - errcheck # unchecked errors
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    - misspell
+    - bodyclose
+    - errorlint # errors.Is/As over == and type asserts
+    - gosec # security-focused checks
+    - nilerr # returning nil after a non-nil error
+  settings:
+    gosec:
+      excludes:
+        - G204 # subprocess with variable args: intentional (ykman/ssh-keygen/systemctl)
+        - G301 # 0755 dirs: trust dirs hold only public material
+        - G302 # 0644 files: pub keys / certs / KRLs must be world-readable for sshd
+        - G306 # same, WriteFile 0644 on public trust files
+        - G101 # "nopassword" const name trips the hardcoded-credential heuristic
+        - G115 # int64→uint64 on time.Now().Unix(): always positive
+        - G304 # file paths come from operator config, not untrusted input
+        - G104 # unhandled Close() on cleanup paths (see source exclusion below)
+        - G702 # command args are code-constructed, not user-tainted
+        - G703 # path-traversal taint: operator-controlled config paths
+        - G704 # SSRF taint: operator specifies the host to connect to
+    errcheck:
+      exclude-functions:
+        - fmt.Fprintf
+        - os.Remove
+  exclusions:
+    rules:
+      - path: _test\.go
+        linters: [errcheck, gosec]
+      # deferred Close() on read/cleanup paths — idiomatic to ignore.
+      - linters: [errcheck, gosec]
+        source: '\.Close\(\)'
+
+formatters:
+  enable:
+    - gofmt

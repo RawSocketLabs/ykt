@@ -1,0 +1,68 @@
+# ykt configuration — trust domains and anchor keys. Copy to config.toml and
+# edit for your setup. Public material (no secrets); safe to commit in a
+# PRIVATE fork. PINs/PUKs and break-glass private keys never go here.
+#
+# Concepts:
+#   anchor  — an offline CA YubiKey that signs certificates. Two anchors give
+#             you redundancy (each is independently trusted). yubikey_serial is
+#             bound automatically by `ykt init ca`; leave it "unset".
+#   domain  — a trust boundary (e.g. work / home). Each gets its own CA keys in
+#             dedicated PIV slots on the anchor, and its own client-cert slot on
+#             daily keys. A cert from one domain never works in another.
+#   slots   — PIV slots hold the CA keys. Use blocks of three retired slots per
+#             domain: 82/83/9c, 84/85/86, 87/88/89, 8a/8b/8c, … Standard slots
+#             9a/9d/9e are good client_slots on daily keys.
+
+[anchors.a1]
+holder = "operator-1"
+location = "site-a-safe"
+yubikey_serial = "unset"
+serial_base = 1000
+
+[anchors.a2]
+holder = "operator-2"
+location = "site-b-safe"
+yubikey_serial = "unset"
+serial_base = 2000
+
+[domains.work]
+scope = "business"
+anchors = ["a1", "a2"]      # trusted by both anchors (redundant)
+user_slot = "82"
+host_slot = "83"
+tls_slot = "9c"
+client_slot = "9a"          # daily-key PIV slot for this domain's mTLS cert
+ssh_cert_slot = "90"          # daily-key PIV slot carrying this domain's SSH cert (route 2)
+host_pattern = "*.work.example"
+default_principal = "youruser"
+user_validity = "+13w"
+host_validity = "+54w"
+tls_validity_days = 365
+
+[domains.home]
+scope = "personal"
+anchors = ["a1"]
+user_slot = "84"
+host_slot = "85"
+tls_slot = "86"
+client_slot = "9d"
+ssh_cert_slot = "91"
+host_pattern = "*.home.example"
+default_principal = "youruser"
+user_validity = "+13w"
+host_validity = "+54w"
+tls_validity_days = 365
+
+[domains.lab]
+scope = "throwaway-test-boxes"
+anchors = ["a1"]
+user_slot = "8a"
+host_slot = "8b"
+tls_slot = "8c"
+client_slot = "82"
+ssh_cert_slot = "92"
+host_pattern = "*.lab.example"
+default_principal = "root"   # generic principal → leaks no name onto test VPSs
+user_validity = "+4w"
+host_validity = "+8w"
+tls_validity_days = 90
