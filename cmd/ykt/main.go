@@ -174,14 +174,15 @@ func newRemoteCmd() *cobra.Command {
 }
 
 func newRemoteInstallCmd() *cobra.Command {
-	var apply bool
+	var apply, all bool
 	c := &cobra.Command{
-		Use:   "install <domain> [machine...]",
-		Short: "Install trust material on hosts (prints commands; --apply pushes via SSH)",
-		Args:  cobra.MinimumNArgs(1),
-		Run:   func(c *cobra.Command, a []string) { cmdRemoteInstall(a, apply) },
+		Use:   "install [domain] [machine...]",
+		Short: "Install/refresh trust on hosts (prints commands; --apply pushes via SSH; --all sweeps every domain)",
+		Args:  cobra.ArbitraryArgs,
+		Run:   func(c *cobra.Command, a []string) { cmdRemoteInstall(a, apply, all) },
 	}
 	c.Flags().BoolVar(&apply, "apply", false, "push via native SSH (validated, one host at a time) instead of printing")
+	c.Flags().BoolVar(&all, "all", false, "refresh every host in every domain — run after `cert revoke` so KRLs propagate")
 	return c
 }
 

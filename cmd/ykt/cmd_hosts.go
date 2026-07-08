@@ -134,12 +134,45 @@ func cmdRemoteCollect(args []string) {
 
 // ---------------------------------------------------------------- install
 
-func cmdRemoteInstall(args []string, apply bool) {
+func cmdRemoteInstall(args []string, apply, all bool) {
 	reg, inv := loadRegistry(), loadInventory()
-	domain := args[0]
-	d := reg.domain(domain)
-	machines := resolveMachines(reg, inv, domain, args[1:])
 
+	// --all: refresh every host in every domain. This is the revocation sweep —
+	// after `cert revoke`, run it so every host gets the current KRL, otherwise a
+	// revoked cert keeps working on hosts until the domain is re-installed.
+	if all {
+		if len(args) > 0 {
+			fatal("--all sweeps every domain; don't also name a domain or machine")
+		}
+		swept := 0
+		for _, domain := range reg.domainNames() {
+			machines := inv.inDomain(domain)
+			if len(machines) == 0 {
+				continue
+			}
+			installDomain(reg, inv, domain, machines, apply)
+			swept++
+		}
+		if swept == 0 {
+			fatal("no machines in inventory for any domain — nothing to sweep")
+		}
+		if apply {
+			good("swept %d domain(s) — every host now carries the current CA trust + KRL", swept)
+		}
+		return
+	}
+
+	if len(args) == 0 {
+		fatal("name a domain (or use --all): ykt remote install <domain> [machine...]")
+	}
+	domain := args[0]
+	machines := resolveMachines(reg, inv, domain, args[1:])
+	installDomain(reg, inv, domain, machines, apply)
+}
+
+// installDomain installs/refreshes trust material on one domain's machines.
+func installDomain(reg *Registry, inv *Inventory, domain string, machines []string, apply bool) {
+	d := reg.domain(domain)
 	caPub, err := gatherHostCA([]string{domain})
 	if err != nil {
 		fatal("%v", err)
