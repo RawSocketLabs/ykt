@@ -144,7 +144,7 @@ hardware.
 | Test boxes | `ykt setup bootstrap cloud-init\|install-script\|trust` | throwaway VPS onboarding |
 | Renew / revoke | `ykt cert renew <name> <domain...>` · `ykt cert revoke` · `ykt remote install --all` | renew (no reset) → sign; revoke → sweep |
 | Store (git) | `ykt repo clone\|sync\|push\|status` | share the trust store between operators |
-| Verify / audit | `ykt verify attestation` · `ykt audit` | prove keys are on-device (offline); view the local action log |
+| Verify / audit | `ykt verify attestation` · `ykt audit` · `ykt remote logins` | prove keys on-device (offline); local action log; harvest who-logged-in-where from hosts |
 | Ops | `ykt status` · `ykt flow` · `ykt cert expiring` · `ykt data record\|inventory` | anywhere |
 
 `ykt help <command>` for details; `ykt completion <shell>` for tab completion.

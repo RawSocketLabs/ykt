@@ -22,6 +22,12 @@ const (
 	sshdReloadCommand = "sudo sshd -t && (sudo systemctl reload sshd || sudo systemctl reload ssh)"
 )
 
+// sshdLogLevel is the LogLevel written into the drop-in. VERBOSE makes sshd log
+// the certificate key ID (domain:person) + serial on every login, so
+// `ykt remote logins` can attribute who logged in. Bound to the --log-level flag
+// on `init host` / `remote install`; empty omits the directive (sshd default).
+var sshdLogLevel = "VERBOSE"
+
 // buildHostDropIn returns the canonical sshd drop-in. It deliberately omits an
 // explicit HostKey directive: naming any HostKey disables the default
 // RSA/ECDSA/ED25519 host keys, so the host would serve only ed25519 and break
@@ -31,6 +37,10 @@ func buildHostDropIn(domains []string, haveHostCert, haveKRL bool) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "# managed by ykt — trusts domain(s): %s\n", strings.Join(domains, " "))
 	fmt.Fprintf(&b, "TrustedUserCAKeys %s\n", hostTrustCAFile)
+	if sshdLogLevel != "" {
+		// logs "Accepted publickey ... ID <domain:person> (serial N) CA ..."
+		fmt.Fprintf(&b, "LogLevel %s\n", sshdLogLevel)
+	}
 	if haveHostCert {
 		fmt.Fprintf(&b, "HostCertificate %s\n", hostCertFile)
 	}

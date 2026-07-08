@@ -143,6 +143,7 @@ func newInitCmd() *cobra.Command {
 	}
 	host.Flags().BoolVar(&multi, "multi", false, "allow trusting more than one domain on this host (shared login principal)")
 	host.Flags().StringVar(&breakGlass, "break-glass", "", "install this offline emergency pubkey as a break-glass authorized_keys entry")
+	host.Flags().StringVar(&sshdLogLevel, "log-level", "VERBOSE", `sshd LogLevel in the drop-in (VERBOSE logs which cert logged in; "" to omit)`)
 
 	init.AddCommand(user, host)
 	return init
@@ -185,10 +186,21 @@ func cmdCertRenew(args []string, verifyRequired bool) {
 // newRemoteCmd groups the operator-side remote host actions.
 func newRemoteCmd() *cobra.Command {
 	remote := &cobra.Command{Use: "remote", Short: "Operator-side remote host management (collect keys, install trust)"}
+	var since, out string
+	logins := &cobra.Command{
+		Use:   "logins [domain] [host...]",
+		Short: "Harvest SSH certificate logins (who logged in where/when) from hosts",
+		Args:  cobra.ArbitraryArgs,
+		Run:   func(c *cobra.Command, a []string) { cmdRemoteLogins(a, since, out) },
+	}
+	logins.Flags().StringVar(&since, "since", "7 days ago", "how far back to read (journalctl --since syntax)")
+	logins.Flags().StringVar(&out, "out", "", "also write the rows as TSV to this file")
+
 	remote.AddCommand(
 		&cobra.Command{Use: "collect <domain> [machine...]", Short: "Fetch host keys into the queue (inventory-driven)",
 			Args: cobra.MinimumNArgs(1), Run: func(c *cobra.Command, a []string) { cmdRemoteCollect(a) }},
 		newRemoteInstallCmd(),
+		logins,
 	)
 	return remote
 }
@@ -203,6 +215,7 @@ func newRemoteInstallCmd() *cobra.Command {
 	}
 	c.Flags().BoolVar(&apply, "apply", false, "push via native SSH (validated, one host at a time) instead of printing")
 	c.Flags().BoolVar(&all, "all", false, "refresh every host in every domain — run after `cert revoke` so KRLs propagate")
+	c.Flags().StringVar(&sshdLogLevel, "log-level", "VERBOSE", `sshd LogLevel in the drop-in (VERBOSE logs which cert logged in; "" to omit)`)
 	return c
 }
 
