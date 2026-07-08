@@ -81,6 +81,7 @@ func main() {
 			Args: cobra.NoArgs, Run: func(c *cobra.Command, a []string) { cmdStatus() }}),
 		grouped("start", newVerifyCmd()),
 		grouped("start", newDocsCmd()),
+		grouped("extra", newAuditCmd()),
 		grouped("build", newInitCmd()),    // ca / user / host — provision keys & hosts into trust
 		grouped("build", newCertCmd()),    // sign / install / revoke / expiring
 		grouped("deploy", newRepoCmd()),   // init / sync / push — your trust store as a git repo
@@ -219,6 +220,26 @@ func newSetupCmd() *cobra.Command {
 		newCaddyCmd(),
 	)
 	return setup
+}
+
+// newAuditCmd exposes the machine-local action log (view / export / path).
+func newAuditCmd() *cobra.Command {
+	audit := &cobra.Command{
+		Use:         "audit [N|all]",
+		Short:       "Show this machine's local ykt action log (default: last 40 lines)",
+		Annotations: storeOptionalAnn,
+		Args:        cobra.MaximumNArgs(1),
+		Run:         func(c *cobra.Command, a []string) { cmdAudit(a) },
+	}
+	audit.AddCommand(
+		&cobra.Command{Use: "export <path>", Short: "Copy the audit log to a file",
+			Annotations: storeOptionalAnn, Args: cobra.ExactArgs(1),
+			Run: func(c *cobra.Command, a []string) { cmdAuditExport(a[0]) }},
+		&cobra.Command{Use: "path", Short: "Print the audit log path",
+			Annotations: storeOptionalAnn, Args: cobra.NoArgs,
+			Run: func(c *cobra.Command, a []string) { cmdAuditPath() }},
+	)
+	return audit
 }
 
 // newVerifyCmd groups offline verification of the trust material.
