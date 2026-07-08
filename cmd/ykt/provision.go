@@ -18,7 +18,7 @@ import (
 //
 // The returned *[]byte is written into mkOut so the caller sees the key even
 // though this runs inside an act() closure (which only returns error).
-func resetAndProvisionPIV(yk *piv.YubiKey, pin, puk string, mkOut *[]byte) error {
+func resetAndProvisionPIV(yk pivKey, pin, puk string, mkOut *[]byte) error {
 	if err := yk.Reset(); err != nil {
 		return fmt.Errorf("reset: %w", err)
 	}

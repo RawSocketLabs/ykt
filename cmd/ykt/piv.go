@@ -15,6 +15,31 @@ import (
 	"github.com/go-piv/piv-go/v2/piv"
 )
 
+// pivKey is the slice of *piv.YubiKey behavior ykt uses. Widening the concrete
+// type to this interface lets tests substitute a software backend (fakePIV) for
+// the hardware, exercising the genesis/enroll/sign/stash orchestration without a
+// YubiKey. *piv.YubiKey satisfies it directly, so the production path is
+// unchanged — this is a type-widening, not a logic change.
+type pivKey interface {
+	Close() error
+	Version() piv.Version
+	Serial() (uint32, error)
+	Retries() (int, error)
+	Reset() error
+	SetManagementKey(oldKey, newKey []byte) error
+	SetPIN(oldPIN, newPIN string) error
+	SetPUK(oldPUK, newPUK string) error
+	VerifyPIN(pin string) error
+	Metadata(pin string) (*piv.Metadata, error)
+	SetMetadata(key []byte, m *piv.Metadata) error
+	GenerateKey(key []byte, slot piv.Slot, opts piv.Key) (crypto.PublicKey, error)
+	PrivateKey(slot piv.Slot, public crypto.PublicKey, auth piv.KeyAuth) (crypto.PrivateKey, error)
+	Attest(slot piv.Slot) (*x509.Certificate, error)
+	AttestationCertificate() (*x509.Certificate, error)
+	Certificate(slot piv.Slot) (*x509.Certificate, error)
+	SetCertificate(key []byte, slot piv.Slot, cert *x509.Certificate) error
+}
+
 // slotByName maps registry slot strings ("82".."95", "9a", "9c", "9d", "9e").
 func slotByName(name string) (piv.Slot, error) {
 	switch strings.ToLower(name) {
@@ -86,7 +111,7 @@ func listYubiKeys() (map[uint32]string, error) {
 //     anchor is — verify it's connected and confirm once. No typing.
 //   - one key connected: confirm it. Several: type the serial (the guard
 //     that keeps an anchor operation off a daily-carry key).
-func pickYubiKey(expected string) (*piv.YubiKey, uint32) {
+func pickYubiKey(expected string) (pivKey, uint32) {
 	head("YubiKey selection")
 	if dryRun {
 		// Honor the contract: --dry-run touches no hardware. Don't enumerate or
@@ -203,7 +228,7 @@ func waitForReplug(serial uint32) {
 
 // openBySerial (re)opens a YubiKey after a replug, retrying while PC/SC
 // re-enumerates the reader.
-func openBySerial(serial uint32) *piv.YubiKey {
+func openBySerial(serial uint32) pivKey {
 	for i := 0; i < 20; i++ {
 		if keys, err := listYubiKeys(); err == nil {
 			if card, ok := keys[serial]; ok {
@@ -228,7 +253,7 @@ func keyList(keys map[uint32]string) []uint32 {
 
 // pivPreflight verifies the card is workable BEFORE any input is gathered:
 // firmware version reported, PIN counter not blocked.
-func pivPreflight(yk *piv.YubiKey) {
+func pivPreflight(yk pivKey) {
 	if yk == nil { // dry-run
 		return
 	}
@@ -245,7 +270,7 @@ func pivPreflight(yk *piv.YubiKey) {
 
 // verifyPINOnce validates the PIN immediately so a typo surfaces here — with
 // the retry count — instead of blocking the card mid-operation.
-func verifyPINOnce(yk *piv.YubiKey, pin string) {
+func verifyPINOnce(yk pivKey, pin string) {
 	if yk == nil {
 		return
 	}
@@ -259,7 +284,7 @@ func verifyPINOnce(yk *piv.YubiKey, pin string) {
 // mgmtKey resolves the management key: PIN-protected metadata (our standard,
 // set during init ca) with a fallback to the factory default for a
 // brand-new key.
-func mgmtKey(yk *piv.YubiKey, pin string) []byte {
+func mgmtKey(yk pivKey, pin string) []byte {
 	if m, err := yk.Metadata(pin); err == nil && m.ManagementKey != nil {
 		return *m.ManagementKey
 	}
@@ -267,7 +292,7 @@ func mgmtKey(yk *piv.YubiKey, pin string) []byte {
 	return piv.DefaultManagementKey
 }
 
-func generateOnDevice(yk *piv.YubiKey, key []byte, slotName string) (crypto.PublicKey, error) {
+func generateOnDevice(yk pivKey, key []byte, slotName string) (crypto.PublicKey, error) {
 	slot, err := slotByName(slotName)
 	if err != nil {
 		return nil, err
@@ -280,7 +305,7 @@ func generateOnDevice(yk *piv.YubiKey, key []byte, slotName string) (crypto.Publ
 }
 
 // pivSigner returns a crypto.Signer backed by a key living in a slot.
-func pivSigner(yk *piv.YubiKey, slotName string, pub crypto.PublicKey, pin string) (crypto.Signer, error) {
+func pivSigner(yk pivKey, slotName string, pub crypto.PublicKey, pin string) (crypto.Signer, error) {
 	slot, err := slotByName(slotName)
 	if err != nil {
 		return nil, err
@@ -299,7 +324,7 @@ func pivSigner(yk *piv.YubiKey, slotName string, pub crypto.PublicKey, pin strin
 }
 
 // slotPublicKey loads the public key for a slot from the certificate object.
-func slotPublicKey(yk *piv.YubiKey, slotName string) (crypto.PublicKey, error) {
+func slotPublicKey(yk pivKey, slotName string) (crypto.PublicKey, error) {
 	slot, err := slotByName(slotName)
 	if err != nil {
 		return nil, err
@@ -311,7 +336,7 @@ func slotPublicKey(yk *piv.YubiKey, slotName string) (crypto.PublicKey, error) {
 	return cert.PublicKey, nil
 }
 
-func attest(yk *piv.YubiKey, slotName string) (*x509.Certificate, error) {
+func attest(yk pivKey, slotName string) (*x509.Certificate, error) {
 	slot, err := slotByName(slotName)
 	if err != nil {
 		return nil, err
@@ -319,7 +344,7 @@ func attest(yk *piv.YubiKey, slotName string) (*x509.Certificate, error) {
 	return yk.Attest(slot)
 }
 
-func setSlotCertificate(yk *piv.YubiKey, key []byte, slotName string, cert *x509.Certificate) error {
+func setSlotCertificate(yk pivKey, key []byte, slotName string, cert *x509.Certificate) error {
 	slot, err := slotByName(slotName)
 	if err != nil {
 		return err
@@ -328,7 +353,7 @@ func setSlotCertificate(yk *piv.YubiKey, key []byte, slotName string, cert *x509
 }
 
 // slotCertificate reads a slot's certificate object (no PIN/touch needed).
-func slotCertificate(yk *piv.YubiKey, slotName string) (*x509.Certificate, error) {
+func slotCertificate(yk pivKey, slotName string) (*x509.Certificate, error) {
 	slot, err := slotByName(slotName)
 	if err != nil {
 		return nil, err
@@ -338,7 +363,7 @@ func slotCertificate(yk *piv.YubiKey, slotName string) (*x509.Certificate, error
 
 // stashOnCard wraps payload in an X.509 carrier and stores it in slotName on
 // the daily key, so `ykt setup key` can recover it elsewhere. Honors dry-run.
-func stashOnCard(yk *piv.YubiKey, mk []byte, slotName, label string, payload []byte) error {
+func stashOnCard(yk pivKey, mk []byte, slotName, label string, payload []byte) error {
 	if dryRun {
 		return nil
 	}

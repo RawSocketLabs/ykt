@@ -6,8 +6,6 @@ package main
 // key actually supports. This is what lets a 5.1.2 test key and a 5.7 daily
 // key both be used to their fullest from the same tool.
 
-import "github.com/go-piv/piv-go/v2/piv"
-
 type ykCaps struct {
 	Version       [3]int
 	Known         bool   // false in dry-run (no hardware to query)
@@ -43,7 +41,7 @@ func capsForVersion(v [3]int) ykCaps {
 	return c
 }
 
-func capsFor(yk *piv.YubiKey) ykCaps {
+func capsFor(yk pivKey) ykCaps {
 	if yk == nil { // dry-run: assume a modern key but mark it unknown
 		c := capsForVersion([3]int{5, 7, 0})
 		c.Known = false
