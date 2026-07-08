@@ -39,3 +39,31 @@ func TestRepoInit(t *testing.T) {
 		t.Fatal("config.toml should be tracked")
 	}
 }
+
+// TestRepoCloneAndSeed: init seeds config.toml from the bundled example, and
+// clone reproduces the store and records the pointer.
+func TestRepoCloneAndSeed(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not installed")
+	}
+	t.Setenv("GIT_AUTHOR_NAME", "ykt test")
+	t.Setenv("GIT_AUTHOR_EMAIL", "test@example.com")
+	t.Setenv("GIT_COMMITTER_NAME", "ykt test")
+	t.Setenv("GIT_COMMITTER_EMAIL", "test@example.com")
+
+	origin := filepath.Join(t.TempDir(), "origin")
+	cmdRepoInit([]string{origin}, "")
+	if !isTrustStore(origin) {
+		t.Fatal("repo init should seed config.toml from the bundled example")
+	}
+
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir()) // isolate the recorded pointer
+	dst := filepath.Join(t.TempDir(), "clone")
+	cmdRepoClone(origin, dst)
+	if !isTrustStore(dst) {
+		t.Fatal("clone should contain config.toml")
+	}
+	if readHomePointer() == "" {
+		t.Fatal("clone should have recorded the store pointer via setup home")
+	}
+}

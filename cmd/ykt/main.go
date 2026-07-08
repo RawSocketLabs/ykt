@@ -216,10 +216,33 @@ func newRepoCmd() *cobra.Command {
 	}
 	initc.Flags().StringVar(&remote, "remote", "", "set the origin remote URL (e.g. git@github.com:you/trust.git)")
 
+	clone := &cobra.Command{
+		Use:         "clone <url> [dir]",
+		Short:       "Clone a trust store and record it (git clone + setup home)",
+		Annotations: storeOptionalAnn,
+		Args:        cobra.RangeArgs(1, 2),
+		Run: func(c *cobra.Command, a []string) {
+			dir := ""
+			if len(a) == 2 {
+				dir = a[1]
+			}
+			cmdRepoClone(a[0], dir)
+		},
+	}
+
+	var rebase bool
+	sync := &cobra.Command{
+		Use:   "sync",
+		Short: "Pull the latest store (fast-forward; --rebase if you have local commits)",
+		Args:  cobra.NoArgs,
+		Run:   func(c *cobra.Command, a []string) { cmdRepoSync(rebase) },
+	}
+	sync.Flags().BoolVar(&rebase, "rebase", false, "rebase local commits on top of the remote instead of fast-forward")
+
 	var msg string
 	push := &cobra.Command{
 		Use:   "push",
-		Short: "Commit local changes and push the store",
+		Short: "Commit local changes and push the store (rebases onto the remote first)",
 		Args:  cobra.NoArgs,
 		Run:   func(c *cobra.Command, a []string) { cmdRepoPush(msg) },
 	}
@@ -227,8 +250,8 @@ func newRepoCmd() *cobra.Command {
 
 	repo.AddCommand(
 		initc,
-		&cobra.Command{Use: "sync", Short: "Fetch and fast-forward the store (git pull)",
-			Args: cobra.NoArgs, Run: func(c *cobra.Command, a []string) { cmdRepoSync() }},
+		clone,
+		sync,
 		push,
 		&cobra.Command{Use: "status", Short: "Show the store's git status",
 			Args: cobra.NoArgs, Run: func(c *cobra.Command, a []string) { cmdRepoStatus() }},

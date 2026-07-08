@@ -13,3 +13,9 @@ import "embed"
 //
 //go:embed README.md INSTALL.md RECOVERY.md CONTRIBUTING.md SECURITY.md CODE_OF_CONDUCT.md CHANGELOG.md web/guide.html
 var Docs embed.FS
+
+// ConfigExample is the starter config that `ykt repo init` writes into a fresh
+// store when none exists yet, so a new operator doesn't have to hunt for it.
+//
+//go:embed config.toml.example
+var ConfigExample []byte
