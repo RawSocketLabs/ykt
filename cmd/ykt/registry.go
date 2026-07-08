@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 
@@ -136,7 +137,74 @@ func loadRegistry() *Registry {
 	if len(r.Domains) == 0 {
 		fatal("config.toml defines no [domains.*]")
 	}
+	if err := validateRegistry(&r); err != nil {
+		fatal("invalid config.toml: %v", err)
+	}
 	return &r
+}
+
+// validateRegistry catches config.toml mistakes that would otherwise surface
+// only in production: undefined anchor references, anchor PIV-slot collisions
+// (genesis silently overwrites a CA key on-device), and overlapping serial_base
+// blocks (duplicate cert serials across operators). Called from loadRegistry so
+// every command fails fast, before any factory reset or signing.
+func validateRegistry(r *Registry) error {
+	// (a) every domain names ≥1 anchor, and every named anchor is defined.
+	for _, dn := range sortedKeys(r.Domains) {
+		d := r.Domains[dn]
+		if len(d.Anchors) == 0 {
+			return fmt.Errorf("domain %q lists no anchors", dn)
+		}
+		for _, an := range d.Anchors {
+			if _, ok := r.Anchors[an]; !ok {
+				return fmt.Errorf("domain %q references undefined anchor %q (add an [anchors.%s] table)", dn, an, an)
+			}
+		}
+	}
+
+	// (b) per anchor, the CA slots it hosts (each domain-on-it × user/host/tls)
+	//     are present, valid, and distinct. A collision means genesis would
+	//     overwrite one CA key on-device.
+	for _, an := range sortedKeys(r.Anchors) {
+		used := map[string]string{} // slot -> "domain/role"
+		for _, dn := range sortedKeys(r.Domains) {
+			d := r.Domains[dn]
+			if !slices.Contains(d.Anchors, an) {
+				continue
+			}
+			for _, rs := range domainRoleSlots(d) {
+				if rs.slot == "" {
+					return fmt.Errorf("domain %q has an empty %s_slot", dn, rs.role)
+				}
+				if _, err := slotByName(rs.slot); err != nil {
+					return fmt.Errorf("domain %q %s_slot: %w", dn, rs.role, err)
+				}
+				owner := dn + "/" + rs.role
+				if prev, dup := used[rs.slot]; dup {
+					return fmt.Errorf("anchor %q slot %s is claimed by both %s and %s — genesis would overwrite a CA key", an, rs.slot, prev, owner)
+				}
+				used[rs.slot] = owner
+			}
+		}
+	}
+
+	// (c) serial_base blocks (base+1 .. base+999) must not overlap across anchors.
+	type ab struct {
+		name string
+		base uint64
+	}
+	bases := make([]ab, 0, len(r.Anchors))
+	for _, an := range sortedKeys(r.Anchors) {
+		bases = append(bases, ab{an, r.Anchors[an].SerialBase})
+	}
+	sort.Slice(bases, func(i, j int) bool { return bases[i].base < bases[j].base })
+	for i := 1; i < len(bases); i++ {
+		if bases[i].base-bases[i-1].base < 1000 {
+			return fmt.Errorf("anchors %q (serial_base %d) and %q (serial_base %d) overlap — space serial_base ≥1000 apart so cert serials stay unique",
+				bases[i-1].name, bases[i-1].base, bases[i].name, bases[i].base)
+		}
+	}
+	return nil
 }
 
 func (r *Registry) domain(name string) Domain {
