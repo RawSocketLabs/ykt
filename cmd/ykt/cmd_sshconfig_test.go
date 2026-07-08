@@ -12,6 +12,7 @@ import (
 func TestMigrateOldLayoutOrphan(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home) // os.UserHomeDir uses USERPROFILE on Windows
 	oldDir := filepath.Join(home, ".ssh", "work")
 	if err := os.MkdirAll(oldDir, 0o700); err != nil {
 		t.Fatal(err)
@@ -35,6 +36,7 @@ func TestMigrateOldLayoutOrphan(t *testing.T) {
 func TestMigrateOldLayoutLeavesUserDir(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home) // os.UserHomeDir uses USERPROFILE on Windows
 	userDir := filepath.Join(home, ".ssh", "work")
 	if err := os.MkdirAll(userDir, 0o700); err != nil {
 		t.Fatal(err)
@@ -53,6 +55,7 @@ func TestMigrateOldLayoutLeavesUserDir(t *testing.T) {
 func TestUpsertManagedIncludes(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home) // os.UserHomeDir uses USERPROFILE on Windows
 	if err := os.MkdirAll(filepath.Join(home, ".ssh"), 0o700); err != nil {
 		t.Fatal(err)
 	}
