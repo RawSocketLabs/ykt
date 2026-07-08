@@ -135,6 +135,7 @@ func cmdRemoteCollect(args []string) {
 // ---------------------------------------------------------------- install
 
 func cmdRemoteInstall(args []string, apply, all bool) {
+	validateSshdLogLevel()
 	reg, inv := loadRegistry(), loadInventory()
 
 	// --all: refresh every host in every domain. This is the revocation sweep —
@@ -250,9 +251,11 @@ func applyHostInstall(domain string, d Domain, inv *Inventory, machines []string
 				return fmt.Errorf("drop-in: %w", err)
 			}
 			// validate-then-reload as one guarded command: reload never runs
-			// if sshd -t fails.
+			// if sshd -t fails. On failure, roll back the drop-in so a later
+			// reboot/reload can't activate a config that fails sshd -t.
 			if out, err := remoteRun(c, sshdReloadCommand); err != nil {
-				return fmt.Errorf("validate/reload FAILED (config not applied): %s", strings.TrimSpace(out))
+				_, _ = remoteRun(c, "sudo rm -f "+shellQuote(hostTrustDropIn))
+				return fmt.Errorf("validate/reload FAILED (drop-in rolled back, not applied): %s", strings.TrimSpace(out))
 			}
 			return nil
 		})

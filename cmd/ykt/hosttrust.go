@@ -28,6 +28,25 @@ const (
 // on `init host` / `remote install`; empty omits the directive (sshd default).
 var sshdLogLevel = "VERBOSE"
 
+var validSshdLogLevels = map[string]bool{
+	"QUIET": true, "FATAL": true, "ERROR": true, "INFO": true, "VERBOSE": true,
+	"DEBUG": true, "DEBUG1": true, "DEBUG2": true, "DEBUG3": true,
+}
+
+// validateSshdLogLevel normalizes and checks --log-level before it's written
+// into a drop-in — a typo would otherwise produce a config that fails sshd -t.
+// "" is allowed and omits the directive.
+func validateSshdLogLevel() {
+	if sshdLogLevel == "" {
+		return
+	}
+	up := strings.ToUpper(sshdLogLevel)
+	if !validSshdLogLevels[up] {
+		fatal("--log-level %q is not a valid sshd LogLevel (QUIET/FATAL/ERROR/INFO/VERBOSE/DEBUG/DEBUG1-3, or \"\" to omit)", sshdLogLevel)
+	}
+	sshdLogLevel = up
+}
+
 // buildHostDropIn returns the canonical sshd drop-in. It deliberately omits an
 // explicit HostKey directive: naming any HostKey disables the default
 // RSA/ECDSA/ED25519 host keys, so the host would serve only ed25519 and break

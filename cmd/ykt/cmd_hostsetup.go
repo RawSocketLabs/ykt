@@ -22,6 +22,7 @@ func cmdInitHost(domains []string, multi bool, breakGlassFile string) {
 	if os.Geteuid() != 0 && !dryRun {
 		fatal("init host writes /etc/ssh — run it with sudo")
 	}
+	validateSshdLogLevel()
 	reg := loadRegistry()
 	for _, d := range domains {
 		reg.domain(d)
@@ -311,7 +312,11 @@ func validateReloadLocalSSHD() error {
 	}
 	sshd := resolveSbin("sshd")
 	if out, err := exec.Command(sshd, "-t").CombinedOutput(); err != nil {
-		return fmt.Errorf("`%s -t` FAILED — not reloading: %s", sshd, strings.TrimSpace(string(out)))
+		// Roll back the ykt drop-ins so a later reboot/reload can't activate a
+		// config that fails sshd -t (which would stop sshd from starting).
+		_ = os.Remove(hostTrustDropIn)
+		_ = os.Remove(hostTrustNoPass)
+		return fmt.Errorf("`%s -t` FAILED — drop-in rolled back, not applied: %s", sshd, strings.TrimSpace(string(out)))
 	}
 	return reloadSSHD()
 }
