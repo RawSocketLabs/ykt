@@ -215,6 +215,31 @@ ssh web1                        <span class="c"># done</span></pre></div>
 ykt <b>init user</b> alice work --keep  <span class="c"># re-queue without resetting the key</span>
 ykt <b>cert revoke</b> work 1004        <span class="c"># revoke a serial → KRL</span>
 ykt <b>remote install</b> work --apply  <span class="c"># push the revocation everywhere</span></pre></div>
+
+  <div class="ex"><h3>⑤ Gate a web app behind your YubiKey (mTLS)</h3>
+  <pre><span class="c"># your mTLS client cert already rides on the key (placed by `cert install`)</span>
+ykt <b>setup caddy</b> work             <span class="c"># emit Caddy client-auth config + CA certs</span>
+<span class="c"># deploy dist/caddy/* to the edge and merge the policy —</span>
+<span class="c"># a browser with the key inserted gets a certificate prompt; without it</span>
+<span class="c"># the request is refused during the TLS handshake.</span></pre></div>
+
+  <div class="ex"><h3>⑥ Throwaway test VPS — trust your key, leak no names</h3>
+  <pre>ykt <b>setup vps</b> cloud-init test     <span class="c"># cloud-init user-data that trusts your test CA</span>
+<span class="c"># — or, on an already-running box —  ykt setup vps install-script test</span>
+ykt <b>setup vps</b> trust 203.0.113.50  <span class="c"># pin the box's host key (TOFU)</span>
+ssh root@203.0.113.50            <span class="c"># in with your cert; nothing identifying on the box</span></pre></div>
+
+  <div class="ex"><h3>⑦ Two operators &amp; an off-site backup anchor</h3>
+  <pre><span class="c"># operator B, at another site, provisions the second anchor:</span>
+ykt <b>init ca</b> a2                    <span class="c"># additive genesis on a2 (no reset if partial)</span>
+git commit -am "add anchor a2" &amp;&amp; git push
+<span class="c"># now EITHER anchor can sign; keep a2 off-site. Signing requests and</span>
+<span class="c"># signed certs travel as git commits — pull, sign, push.</span></pre></div>
+
+  <div class="ex"><h3>⑧ Run <code>ykt</code> from anywhere</h3>
+  <pre><span class="c"># from inside your store checkout, once:</span>
+ykt <b>setup home</b>                    <span class="c"># records the store in ~/.config/ykt/home</span>
+cd ~ &amp;&amp; ykt <b>status</b>                 <span class="c"># now works from any directory</span></pre></div>
 </section>
 
 <footer>ykt · run <code>ykt docs</code> any time · full reference in the links up top · <code>ykt flow</code> walks you through the next step</footer>
