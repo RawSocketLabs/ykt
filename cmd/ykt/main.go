@@ -79,6 +79,7 @@ func main() {
 		grouped("start", newDoctorCmd()),
 		grouped("start", &cobra.Command{Use: "status", Short: "Registry, inventory, queue, and ledger summary",
 			Args: cobra.NoArgs, Run: func(c *cobra.Command, a []string) { cmdStatus() }}),
+		grouped("start", newVerifyCmd()),
 		grouped("start", newDocsCmd()),
 		grouped("build", newInitCmd()),    // ca / user / host — provision keys & hosts into trust
 		grouped("build", newCertCmd()),    // sign / install / revoke / expiring
@@ -218,6 +219,16 @@ func newSetupCmd() *cobra.Command {
 		newCaddyCmd(),
 	)
 	return setup
+}
+
+// newVerifyCmd groups offline verification of the trust material.
+func newVerifyCmd() *cobra.Command {
+	verify := &cobra.Command{Use: "verify", Short: "Verify trust material (attestations) offline"}
+	verify.AddCommand(
+		&cobra.Command{Use: "attestation [anchor...]", Short: "Prove CA keys are on-device via PIV attestation (no hardware needed)",
+			Args: cobra.ArbitraryArgs, Run: func(c *cobra.Command, a []string) { cmdVerifyAttestation(a) }},
+	)
+	return verify
 }
 
 // newRepoCmd groups management of the trust store as a git repo — the way to
