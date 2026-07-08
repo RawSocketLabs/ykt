@@ -216,7 +216,7 @@ func newSetupCmd() *cobra.Command {
 		&cobra.Command{Use: "home [path]", Short: "Record this trust store so `ykt` finds it from any directory",
 			Annotations: storeOptionalAnn,
 			Args:        cobra.MaximumNArgs(1), Run: func(c *cobra.Command, a []string) { cmdSetupHome(a) }},
-		newVPSCmd(),
+		newBootstrapCmd(),
 		newCaddyCmd(),
 	)
 	return setup
@@ -401,34 +401,35 @@ func newSSHConfigAddCmd() *cobra.Command {
 	return c
 }
 
-func newVPSCmd() *cobra.Command {
-	vps := &cobra.Command{
-		Use:   "vps",
-		Short: "Throwaway test-box helpers: cloud-init / install-script / trust (public material only)",
+func newBootstrapCmd() *cobra.Command {
+	bootstrap := &cobra.Command{
+		Use:     "bootstrap",
+		Aliases: []string{"vps"}, // old name kept working
+		Short:   "Make a fresh box trust your CA: cloud-init / install-script / trust (public material only)",
 	}
 	var ciUser, scUser string
 	ci := &cobra.Command{
 		Use:   "cloud-init <domain>",
-		Short: "Emit cloud-init user-data that trusts your user CA (push at VPS creation)",
+		Short: "Emit cloud-init user-data that trusts your user CA (push at box creation)",
 		Args:  cobra.ExactArgs(1),
-		Run:   func(c *cobra.Command, a []string) { cmdVPSCloudInit(a[0], ciUser) },
+		Run:   func(c *cobra.Command, a []string) { cmdBootstrapCloudInit(a[0], ciUser) },
 	}
 	ci.Flags().StringVar(&ciUser, "user", "root", "login user your cert principal must match")
 	sc := &cobra.Command{
 		Use:   "install-script <domain>",
 		Short: "Emit a paste-on-the-box shell snippet that trusts your user CA",
 		Args:  cobra.ExactArgs(1),
-		Run:   func(c *cobra.Command, a []string) { cmdVPSInstallScript(a[0], scUser) },
+		Run:   func(c *cobra.Command, a []string) { cmdBootstrapInstallScript(a[0], scUser) },
 	}
 	sc.Flags().StringVar(&scUser, "user", "root", "login user your cert principal must match")
 	trust := &cobra.Command{
 		Use:   "trust <ip-or-host>",
 		Short: "Pin a box's host key to known_hosts (TOFU-confirm) so connecting won't prompt",
 		Args:  cobra.ExactArgs(1),
-		Run:   func(c *cobra.Command, a []string) { cmdVPSTrust(a[0]) },
+		Run:   func(c *cobra.Command, a []string) { cmdBootstrapTrust(a[0]) },
 	}
-	vps.AddCommand(ci, sc, trust)
-	return vps
+	bootstrap.AddCommand(ci, sc, trust)
+	return bootstrap
 }
 
 func newCaddyCmd() *cobra.Command {

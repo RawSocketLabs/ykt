@@ -141,7 +141,7 @@ hardware.
 | Host trust (remote) | `ykt remote collect` / `ykt remote install [--apply] [--all]` | operator machine (`--all` re-pushes KRLs everywhere after a revoke) |
 | SSH config | `ykt setup ssh init [--include top\|bottom]\|add\|sync\|list\|remove` | client machines; all under `~/.ssh/ykt/<domain>/` (never collides) |
 | mTLS edge | `ykt setup caddy <domain...>` | generates Caddy client-auth config |
-| Test boxes | `ykt setup vps cloud-init\|install-script\|trust` | throwaway VPS onboarding |
+| Test boxes | `ykt setup bootstrap cloud-init\|install-script\|trust` | throwaway VPS onboarding |
 | Renew / revoke | `ykt cert renew <name> <domain...>` · `ykt cert revoke` · `ykt remote install --all` | renew (no reset) → sign; revoke → sweep |
 | Store (git) | `ykt repo clone\|sync\|push\|status` | share the trust store between operators |
 | Verify / audit | `ykt verify attestation` · `ykt audit` | prove keys are on-device (offline); view the local action log |

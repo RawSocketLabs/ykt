@@ -224,9 +224,9 @@ ykt <b>setup caddy</b> work             <span class="c"># emit Caddy client-auth
 <span class="c"># the request is refused during the TLS handshake.</span></pre></div>
 
   <div class="ex"><h3>⑥ Throwaway test VPS — trust your key, leak no names</h3>
-  <pre>ykt <b>setup vps</b> cloud-init test     <span class="c"># cloud-init user-data that trusts your test CA</span>
-<span class="c"># — or, on an already-running box —  ykt setup vps install-script test</span>
-ykt <b>setup vps</b> trust 203.0.113.50  <span class="c"># pin the box's host key (TOFU)</span>
+  <pre>ykt <b>setup bootstrap</b> cloud-init test     <span class="c"># cloud-init user-data that trusts your test CA</span>
+<span class="c"># — or, on an already-running box —  ykt setup bootstrap install-script test</span>
+ykt <b>setup bootstrap</b> trust 203.0.113.50  <span class="c"># pin the box's host key (TOFU)</span>
 ssh root@203.0.113.50            <span class="c"># in with your cert; nothing identifying on the box</span></pre></div>
 
   <div class="ex"><h3>⑦ Two operators &amp; an off-site backup anchor</h3>

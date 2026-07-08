@@ -1,6 +1,6 @@
 package main
 
-// vps: throwaway test-box helpers. Emits a cloud-init file (push at creation)
+// bootstrap: helpers to make a fresh box trust your CA without SSHing in first. Emits a cloud-init file (push at creation)
 // or a one-liner install script (paste on a running box) that makes the box
 // trust your user CA so your YubiKey-backed cert logs you in immediately — no
 // per-box key distribution, no ssh-in-first. Only PUBLIC material is emitted,
@@ -25,8 +25,8 @@ func stripCAComment(caPub []byte) string {
 	return strings.Join(out, "\n")
 }
 
-// vpsMaterial returns the anonymized user-CA line(s) for a domain.
-func vpsMaterial(domain string) string {
+// bootstrapMaterial returns the anonymized user-CA line(s) for a domain.
+func bootstrapMaterial(domain string) string {
 	caPub, err := os.ReadFile(trustedUserCAPath(domain))
 	if err != nil {
 		fatal("[%s] no trusted user CA — run init ca (and pull the repo) first: %v", domain, err)
@@ -38,15 +38,15 @@ func vpsMaterial(domain string) string {
 	return ca
 }
 
-func vpsDropIn() string {
+func bootstrapDropIn() string {
 	// no domain/tool comment — nothing identifying lands on a throwaway box.
 	return "TrustedUserCAKeys " + hostTrustCAFile + "\n"
 }
 
-func cmdVPSCloudInit(domain, user string) {
+func cmdBootstrapCloudInit(domain, user string) {
 	reg := loadRegistry()
 	reg.domain(domain)
-	ca := vpsMaterial(domain)
+	ca := bootstrapMaterial(domain)
 	// cloud-init user-data: install the CA, drop-in, harden a touch, reload.
 	fmt.Printf(`#cloud-config
 # ykt test-box trust (public material only; connect with your cert).
@@ -62,15 +62,15 @@ write_files:
 runcmd:
   - [ sh, -c, "sshd -t && (systemctl reload sshd || systemctl reload ssh)" ]
 `, hostTrustCAFile, strings.ReplaceAll(ca, "\n", "\n      "),
-		hostTrustDropIn, strings.TrimRight(vpsDropIn(), "\n"))
+		hostTrustDropIn, strings.TrimRight(bootstrapDropIn(), "\n"))
 
-	vpsConnectHint(reg, domain, user)
+	bootstrapConnectHint(reg, domain, user)
 }
 
-func cmdVPSInstallScript(domain, user string) {
+func cmdBootstrapInstallScript(domain, user string) {
 	reg := loadRegistry()
 	reg.domain(domain)
-	ca := vpsMaterial(domain)
+	ca := bootstrapMaterial(domain)
 	head("Paste this on the running box (as root/sudo) — public material only")
 	fmt.Printf(`sudo tee %s > /dev/null <<'EOF'
 %s
@@ -78,29 +78,29 @@ EOF
 sudo tee %s > /dev/null <<'EOF'
 %sEOF
 sudo sh -c 'sshd -t && (systemctl reload sshd || systemctl reload ssh)'
-`, hostTrustCAFile, ca, hostTrustDropIn, vpsDropIn())
+`, hostTrustCAFile, ca, hostTrustDropIn, bootstrapDropIn())
 
-	vpsConnectHint(reg, domain, user)
+	bootstrapConnectHint(reg, domain, user)
 }
 
-func vpsConnectHint(reg *Registry, domain, user string) {
+func bootstrapConnectHint(reg *Registry, domain, user string) {
 	d := reg.domain(domain)
 	principal := d.DefaultPrincipal
 	fmt.Println()
 	head("Then connect (first connect TOFU-pins the box's host key)")
 	say("  ssh -o IdentitiesOnly=yes -i ~/.ssh/%s \\", dailyKeyName)
 	say("      -o CertificateFile=~/.ssh/%s \\", installedSSHCertName(domain))
-	say("      %s@<vps-ip>", user)
+	say("      %s@<box-ip>", user)
 	note("your cert authorizes login as principal %q — make sure the box has that", principal)
 	note("user (root by default here), or pass --user <name> to match an existing one.")
-	note("To pre-trust the box's host key (skip the TOFU prompt): ykt setup vps trust <vps-ip>")
-	note("For a reusable short alias: ykt setup ssh add %s <name> --address <vps-ip> --user %s", domain, user)
+	note("To pre-trust the box's host key (skip the TOFU prompt): ykt setup bootstrap trust <box-ip>")
+	note("For a reusable short alias: ykt setup ssh add %s <name> --address <box-ip> --user %s", domain, user)
 }
 
-// cmdVPSTrust pins a test box's host key to known_hosts by connecting once and
+// cmdBootstrapTrust pins a test box's host key to known_hosts by connecting once and
 // confirming the fingerprint — so later connections don't prompt. Reuses the
 // same TOFU path as host-collect.
-func cmdVPSTrust(dest string) {
+func cmdBootstrapTrust(dest string) {
 	head("Pin host key for %s", dest)
 	explain("Connects once, shows the host key fingerprint, and pins it to",
 		"~/.ssh/known_hosts on your confirmation. No names are sent to the box.")
