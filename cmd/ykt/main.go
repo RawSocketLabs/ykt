@@ -148,18 +148,36 @@ func newInitCmd() *cobra.Command {
 
 // newCertCmd groups the certificate lifecycle at the CA.
 func newCertCmd() *cobra.Command {
-	cert := &cobra.Command{Use: "cert", Short: "Certificate lifecycle: sign, install, revoke, expiring"}
+	cert := &cobra.Command{Use: "cert", Short: "Certificate lifecycle: sign, install, renew, revoke, expiring"}
+
+	var renewVerify bool
+	renew := &cobra.Command{
+		Use:   "renew <person> <domain...>",
+		Short: "Re-request certs for your existing daily key (no reset); then `cert sign`",
+		Args:  cobra.MinimumNArgs(2),
+		Run:   func(c *cobra.Command, a []string) { cmdCertRenew(a, renewVerify) },
+	}
+	renew.Flags().BoolVar(&renewVerify, "verify-required", false, "require FIDO2 PIN on every SSH use, where supported")
+
 	cert.AddCommand(
 		&cobra.Command{Use: "sign <anchor>", Short: "Sign everything queued for this anchor's domains",
 			Args: cobra.ExactArgs(1), Run: func(c *cobra.Command, a []string) { cmdSign(a) }},
 		&cobra.Command{Use: "install <name> <domain...>", Short: "After signing: place SSH certs, import TLS certs into PIV slots",
 			Args: cobra.MinimumNArgs(2), Run: func(c *cobra.Command, a []string) { cmdCertInstall(a) }},
+		renew,
 		&cobra.Command{Use: "revoke <domain> <serial...>", Short: "Revoke ledger serials into the domain KRL",
 			Args: cobra.MinimumNArgs(2), Run: func(c *cobra.Command, a []string) { cmdCertRevoke(a) }},
 		&cobra.Command{Use: "expiring [days]", Short: "List certificates expiring within N days (default 21)",
 			Args: cobra.MaximumNArgs(1), Run: func(c *cobra.Command, a []string) { cmdCertExpiring(a) }},
 	)
 	return cert
+}
+
+// cmdCertRenew re-queues signing requests for the existing daily key without a
+// factory reset — the renewal path for a cert nearing expiry.
+func cmdCertRenew(args []string, verifyRequired bool) {
+	note("renew = re-queue signing requests for your EXISTING daily key (no FIDO/PIV reset).")
+	cmdInitUser(args, true, verifyRequired) // keep = true
 }
 
 // newRemoteCmd groups the operator-side remote host actions.
@@ -461,9 +479,37 @@ func cmdStatus() {
 			say("  %-6s %d issued, %d revoked", dn, len(entries), revoked)
 		}
 	}
+	if ex := expiringCerts(reg, 21); len(ex) > 0 {
+		head("attention")
+		warn("%d certificate(s) expire within 21 days — `ykt cert expiring` for details, `ykt cert renew` to re-request", len(ex))
+	}
 }
 
 // ---------------------------------------------------------------- expiring
+
+// expiringCert pairs a ledger entry with its domain for reporting.
+type expiringCert struct {
+	Domain string
+	Entry  LedgerEntry
+}
+
+// expiringCerts returns the non-revoked certs expiring within `days` days,
+// across every domain. Shared by `cert expiring` and the `status` summary.
+func expiringCerts(reg *Registry, days int) []expiringCert {
+	cutoff := time.Now().AddDate(0, 0, days).Format("2006-01-02")
+	var out []expiringCert
+	for _, dn := range reg.domainNames() {
+		for _, e := range loadLedger(dn) {
+			if e.Revoked || e.Expires == "" || e.Expires == "?" {
+				continue
+			}
+			if e.Expires <= cutoff {
+				out = append(out, expiringCert{dn, e})
+			}
+		}
+	}
+	return out
+}
 
 func cmdCertExpiring(args []string) {
 	days := 21
@@ -472,23 +518,16 @@ func cmdCertExpiring(args []string) {
 			days = n
 		}
 	}
-	cutoff := time.Now().AddDate(0, 0, days).Format("2006-01-02")
 	reg := loadRegistry()
-	head("certificates expiring on or before %s", cutoff)
-	found := false
-	for _, dn := range reg.domainNames() {
-		for _, e := range loadLedger(dn) {
-			if e.Revoked || e.Expires == "" || e.Expires == "?" {
-				continue
-			}
-			if e.Expires <= cutoff {
-				say("  %-6s %-5s %-24s expires %s (%s)", dn, e.Type, e.Identity, e.Expires, e.File)
-				found = true
-			}
-		}
+	head("certificates expiring within %d days", days)
+	ex := expiringCerts(reg, days)
+	for _, x := range ex {
+		say("  %-6s %-5s %-24s expires %s (%s)", x.Domain, x.Entry.Type, x.Entry.Identity, x.Entry.Expires, x.Entry.File)
 	}
-	if !found {
+	if len(ex) == 0 {
 		good("nothing expiring within %d days", days)
+	} else {
+		note("renew with `ykt cert renew <person> <domain...>` (no key reset), then `ykt cert sign`.")
 	}
 }
 
