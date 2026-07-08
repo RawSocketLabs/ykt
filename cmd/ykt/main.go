@@ -7,6 +7,7 @@ import (
 	"crypto/rand"
 	"fmt"
 	"os"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"time"
@@ -14,16 +15,28 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// version is injected at build time via -ldflags "-X main.version=..."
-// (see Makefile / goreleaser); defaults to "dev" for `go run`/`go build`.
+// version is injected at build time via -ldflags "-X main.version=..." (release
+// binaries and the Makefile). Left as "dev" for plain `go build`/`go run`.
 var version = "dev"
+
+// effectiveVersion prefers the ldflags value; for `go install ...@vX.Y.Z`
+// (no ldflags) it falls back to the module version the toolchain records.
+func effectiveVersion() string {
+	if version != "" && version != "dev" {
+		return version
+	}
+	if bi, ok := debug.ReadBuildInfo(); ok && bi.Main.Version != "" && bi.Main.Version != "(devel)" {
+		return bi.Main.Version
+	}
+	return version
+}
 
 func main() {
 	root := &cobra.Command{
 		Use:           "ykt",
 		Short:         "YubiKey-anchored offline CA for SSH and mTLS (native Go)",
 		Long:          "Offline YubiKey-anchored certificate authority for SSH and mTLS\nacross your configured trust domains (see config.toml).",
-		Version:       version,
+		Version:       effectiveVersion(),
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		PersistentPreRun: func(cmd *cobra.Command, args []string) {
