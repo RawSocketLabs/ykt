@@ -57,8 +57,23 @@ retry counters), `ssh-keygen` presence **and sk support** (`ssh -Q key`),
 **From releases:** grab the artifact for your platform from the
 [Releases page](https://github.com/RawSocketLabs/ykt/releases) (built by CI):
 `ykt-linux-amd64`, `ykt-darwin-arm64`, `ykt-windows-amd64.exe`. Put it on your
-`PATH`, or run it from your repo checkout (the binary locates `config.toml`
-relative to itself or the working directory, or via `YKT_HOME`).
+`PATH`.
+
+**Finding your trust store.** `ykt` locates `config.toml` in this order:
+`$YKT_HOME` → the binary's own directory → walking up from the current directory
+→ a pointer you record once. So running `ykt` from inside your store checkout
+just works. To use an installed `ykt` from *anywhere*, run this once from inside
+the store:
+
+```
+ykt setup home            # records this store in ~/.config/ykt/home
+# ykt setup home /path     # or point at a specific directory
+```
+
+The store itself (config + CA material) stays a git repo you clone — it is *not*
+kept in hidden user dirs, because it's synced between operators. Only two
+machine-local things use standard user dirs: the store pointer
+(`$XDG_CONFIG_HOME/ykt/home`) and the audit log (`$XDG_STATE_HOME/ykt/ykt.log`).
 
 **Building locally** (from the repo root):
 

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -211,7 +212,14 @@ func shellJoin(argv []string) string {
 }
 
 func logLine(s string) {
-	f, err := os.OpenFile(trustPath("ykt.log"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	p := logFilePath() // machine-local XDG state dir, not the (synced) trust store
+	if p == "" {
+		return
+	}
+	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+		return
+	}
+	f, err := os.OpenFile(p, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 	if err != nil {
 		return
 	}

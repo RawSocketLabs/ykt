@@ -27,9 +27,10 @@ func main() {
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		PersistentPreRun: func(cmd *cobra.Command, args []string) {
-			// doctor must work on a fresh machine with no repo; every other
-			// command needs config.toml.
-			if cmd.Name() == "doctor" {
+			// doctor (fresh machine) and `setup home` (records where the store
+			// IS) must run without an already-locatable store; everything else
+			// needs config.toml.
+			if cmd.Name() == "doctor" || cmd.Name() == "home" {
 				initTrustHome()
 			} else {
 				requireTrustHome()
@@ -153,6 +154,8 @@ func newSetupCmd() *cobra.Command {
 		newSetupSSHCmd(),
 		&cobra.Command{Use: "key [domain...]", Short: "Set up THIS machine from the inserted key alone (carry no files)",
 			Run: func(c *cobra.Command, a []string) { cmdSetupKey(a) }},
+		&cobra.Command{Use: "home [path]", Short: "Record this trust store so `ykt` finds it from any directory",
+			Args: cobra.MaximumNArgs(1), Run: func(c *cobra.Command, a []string) { cmdSetupHome(a) }},
 		newVPSCmd(),
 		newCaddyCmd(),
 	)

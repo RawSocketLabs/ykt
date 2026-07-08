@@ -44,13 +44,18 @@ func initTrustHome() bool {
 			}
 		}
 	}
+	// last resort: a pointer recorded by `ykt setup home` (global invocation)
+	if dir := readHomePointer(); dir != "" {
+		trustHome = dir
+		return true
+	}
 	return false
 }
 
 // requireTrustHome is initTrustHome for commands that genuinely need a repo.
 func requireTrustHome() {
 	if !initTrustHome() {
-		fatal("cannot locate config.toml — run from the trust/ directory or set YKT_HOME")
+		fatal("cannot locate config.toml — run from inside your ykt store, set $YKT_HOME, or record it once with `ykt setup home <path>`")
 	}
 }
 
