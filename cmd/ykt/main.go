@@ -632,6 +632,33 @@ func cmdCertRevoke(args []string) {
 		fatal("serial(s) %v not found in the %s ledger — nothing was changed", missing, domainName)
 	}
 
+	// Classify: the SSH KRL only revokes SSH (user/host) certs. mTLS (tls) certs
+	// are X.509 — the KRL can't enforce them, so we record but don't pretend.
+	serialType := map[uint64]string{}
+	for _, e := range ledgerEntries {
+		if e.Serial != 0 {
+			serialType[e.Serial] = e.Type
+		}
+	}
+	var tlsSerials []uint64
+	for _, s := range serials {
+		if serialType[s] == "tls" {
+			tlsSerials = append(tlsSerials, s)
+		}
+	}
+	sshCount := len(serials) - len(tlsSerials)
+
+	// Confirm before mutating — the only destructive command that used to skip this.
+	var plan []string
+	if sshCount > 0 {
+		plan = append(plan, fmt.Sprintf("revoke %d SSH serial(s) into %s (enforced once hosts get the KRL)", sshCount, krlPath(domainName)))
+	}
+	if len(tlsSerials) > 0 {
+		plan = append(plan, fmt.Sprintf("record %d mTLS serial(s) %v as REVOKED in the ledger (NOT enforced by ykt yet)", len(tlsSerials), tlsSerials))
+	}
+	plan = append(plan, "mark the serial(s) REVOKED in the ledger")
+	confirmPlan(plan)
+
 	// 2. Build the KRL groups from the ledger PLUS the serials being revoked
 	//    now, so the KRL is written before the ledger and a missing CA pub is
 	//    a hard error (never a silently smaller KRL).
@@ -647,8 +674,8 @@ func cmdCertRevoke(args []string) {
 		newlyRevoked[s] = ""
 	}
 	for _, e := range ledgerEntries {
-		if e.Serial == 0 {
-			continue
+		if e.Serial == 0 || e.Type == "tls" {
+			continue // the SSH KRL never lists X.509 (mTLS) serials
 		}
 		if e.Revoked {
 			addRevocation(e.Anchor, e.Serial)
@@ -698,9 +725,17 @@ func cmdCertRevoke(args []string) {
 		return nil
 	})
 
-	warn("Revocation is only real once every host has the new KRL:")
-	say("  ykt remote install %s --apply     (pushes the KRL everywhere)", domainName)
-	say("  (or re-run 'sudo ykt init host %s' on each host)", domainName)
+	if sshCount > 0 {
+		warn("SSH revocation is only real once every host has the new KRL:")
+		say("  ykt remote install %s --apply     (or --all after revoking across domains)", domainName)
+		say("  (or re-run 'sudo ykt init host %s' on each host)", domainName)
+	}
+	if len(tlsSerials) > 0 {
+		warn("mTLS revocation is RECORDED in the ledger but NOT ENFORCED by ykt yet:")
+		say("  a revoked mTLS cert keeps working until it expires (TLSValidityDays).")
+		say("  To enforce now, re-issue the domain's client CA, or keep TLS lifetimes short.")
+		say("  (An X.509 CRL for mTLS is a planned follow-up.)")
+	}
 }
 
 func expiryDays(days int) string {
