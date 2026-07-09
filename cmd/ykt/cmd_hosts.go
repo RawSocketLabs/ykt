@@ -217,18 +217,30 @@ func printHostInstall(reg *Registry, inv *Inventory, machines []string) {
 		h := gatherHostInstall(reg, inv, name)
 		dropIn := buildHostDropIn(h.trust, h.haveCert, h.krl != nil)
 		fmt.Printf("\n%s\n", colorize(cBold, "──── "+name+" ("+h.dest+") · trusts "+strings.Join(h.trust, " ")+" ────"))
-		fmt.Printf("# 1. trusted user CA(s)\nsudo tee %s > /dev/null <<'EOF'\n%sEOF\n", hostTrustCAFile, h.caPub)
+
+		// Steps are numbered by what's actually present (no gaps): the KRL and
+		// host-cert steps only exist when there's a KRL / a signed host cert.
+		step := 0
+		next := func() int { step++; return step }
+
+		fmt.Printf("# %d. trusted user CA(s)\nsudo tee %s > /dev/null <<'EOF'\n%sEOF\n", next(), hostTrustCAFile, h.caPub)
 		if h.krl != nil {
-			fmt.Printf("\n# 2. revocation list: scp the KRL (binary) to %s\n", hostTrustKRLFile)
+			fmt.Printf("\n# %d. revocation list (KRL — empty until you revoke; shipped so revoking later is one file, no reload): scp the binary KRL to %s\n", next(), hostTrustKRLFile)
+		} else {
+			fmt.Printf("\n# (KRL could not be built — revocation would NOT be enforced on this host)\n")
 		}
 		if h.haveCert {
-			fmt.Printf("\n# 3. this machine's host certificate\nsudo tee %s > /dev/null <<'EOF'\n%sEOF\n", hostCertFile, h.cert)
+			fmt.Printf("\n# %d. this machine's host certificate\nsudo tee %s > /dev/null <<'EOF'\n%sEOF\n", next(), hostCertFile, h.cert)
 		} else {
-			fmt.Printf("\n# (no signed host cert yet — remote collect + cert sign to add one; TOFU until then)\n")
+			fmt.Printf("\n# (no signed host cert yet — this host stays TOFU; see the note below to upgrade)\n")
 		}
-		fmt.Printf("\n# 4. sshd drop-in\nsudo tee %s > /dev/null <<'EOF'\n%sEOF\n", hostTrustDropIn, dropIn)
-		fmt.Printf("\n# 5. validate BEFORE reload — do not skip\n%s\n", sshdReloadCommand)
-		fmt.Printf("\n# 6. from ANOTHER terminal: ssh %s  (expect: no password, one touch)\n", h.dest)
+		fmt.Printf("\n# %d. sshd drop-in\nsudo tee %s > /dev/null <<'EOF'\n%sEOF\n", next(), hostTrustDropIn, dropIn)
+		fmt.Printf("\n# %d. validate BEFORE reload — do not skip\n%s\n", next(), sshdReloadCommand)
+		fmt.Printf("\n# %d. from ANOTHER terminal: ssh %s  (expect: no password, one touch)\n", next(), h.dest)
+		if !h.haveCert {
+			fmt.Printf("\n# To upgrade %s from TOFU to full host-cert verification later:\n"+
+				"#   ykt remote collect %s  →  ykt cert sign <anchor>  →  re-run this install\n", name, name)
+		}
 	}
 }
 

@@ -75,8 +75,14 @@ func TestHostKRLBytesMultiDomain(t *testing.T) {
 	dir := t.TempDir()
 	withTrustHome(t, dir)
 
-	if hostKRLBytes([]string{"d1", "d2"}) != nil {
-		t.Fatal("no revocations yet → nil KRL")
+	// No revocations yet → a valid EMPTY KRL (never nil), so every host's
+	// RevokedKeys is present from install and revoking later is a one-file push.
+	empty := hostKRLBytes([]string{"d1", "d2"})
+	if empty == nil {
+		t.Fatal("hostKRLBytes should return an empty-but-valid KRL, never nil")
+	}
+	if len(empty) < 8 || binary.BigEndian.Uint64(empty[:8]) != krlMagic {
+		t.Fatal("empty KRL doesn't start with the KRL magic")
 	}
 
 	for i, dn := range []string{"d1", "d2"} {

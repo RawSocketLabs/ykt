@@ -122,22 +122,29 @@ func domainKRLGroups(domain string) []krlCAGroup {
 	return groups
 }
 
-// hostKRLBytes returns the KRL to push to a host trusting the given domains: the
-// published per-domain KRL file for a single domain, or a freshly merged KRL
-// (built from every trusted domain's ledger) for a multi-domain host — so
-// revocations reach multi-domain hosts too. nil if nothing is revoked.
+// hostKRLBytes returns the KRL to push to a host trusting the given domains. It
+// ALWAYS returns a valid KRL — an empty one (revokes nothing) when nothing is
+// revoked yet — so every host's RevokedKeys is present from the first install.
+// A later `cert revoke` then reaches hosts as a single KRL-file push: sshd
+// re-reads RevokedKeys per connection, so it takes effect immediately with no
+// drop-in change and no reload. Single domain uses the published per-domain KRL
+// file when present; otherwise (and for multi-domain) it's built from the
+// ledger(s). Returns nil only if KRL construction itself fails.
 func hostKRLBytes(domains []string) []byte {
 	if len(domains) == 1 {
-		return singleKRL(domains)
+		if b := singleKRL(domains); b != nil {
+			return b // authoritative published KRL for this domain
+		}
 	}
 	var groups []krlCAGroup
 	for _, dn := range domains {
 		groups = append(groups, domainKRLGroups(dn)...)
 	}
-	if len(groups) == 0 {
-		return nil
+	comment := "ykt KRL " + today()
+	if len(groups) > 0 {
+		comment = "ykt merged KRL " + today()
 	}
-	b, err := buildKRL(groups, uint64(nowUnix()), "ykt merged KRL "+today())
+	b, err := buildKRL(groups, uint64(nowUnix()), comment) // empty groups → valid empty KRL
 	if err != nil {
 		return nil
 	}

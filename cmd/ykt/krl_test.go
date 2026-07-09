@@ -5,11 +5,24 @@ package main
 // `ssh-keygen -Q` whether our KRL revokes it.
 
 import (
+	"encoding/binary"
 	"os"
 	"path/filepath"
 	"slices"
 	"testing"
 )
+
+// An empty KRL must be structurally valid — the host-trust drop-in always
+// references RevokedKeys, so a malformed empty KRL would fail sshd -t.
+func TestBuildKRLEmptyIsValid(t *testing.T) {
+	b, err := buildKRL(nil, 1, "empty")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(b) < 8 || binary.BigEndian.Uint64(b[:8]) != krlMagic {
+		t.Fatal("empty KRL must still carry the KRL magic header")
+	}
+}
 
 func TestBuildKRLDoesNotMutateInput(t *testing.T) {
 	serials := []uint64{300, 100, 200}
