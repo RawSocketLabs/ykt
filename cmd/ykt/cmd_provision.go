@@ -284,6 +284,18 @@ func cmdInitUser(args []string, keep, verifyRequired bool) {
 		warn("--verify-required requested but this key can't do it — proceeding without")
 	}
 
+	// Verify the FIDO2 toolchain BEFORE any destructive reset. macOS's system
+	// ssh-keygen can't generate sk keys, and discovering that AFTER the factory
+	// reset strands the operator with a wiped key. This runs before the plan.
+	if needSSHKey && !dryRun {
+		note("checking the FIDO2 toolchain (your key may blink briefly — no touch needed)…")
+		if err := skKeygenProbe(sshArgv[0], caps.SSHKeyType); err != nil {
+			fatal("%v\n\n  Nothing on your key was changed — this ran before any reset.\n  Fix: %s\n  ykt then uses that build automatically (no PATH change). Verify with 'ykt doctor'.",
+				err, shellJoin(firstFix(opensshFix())))
+		}
+		good("FIDO2 toolchain OK (%s)", sshArgv[0])
+	}
+
 	// ---- plan --------------------------------------------------------------
 	planLines := []string{}
 	if !keep {

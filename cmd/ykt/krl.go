@@ -5,10 +5,9 @@ package main
 // Verified against `ssh-keygen -Q` during development.
 
 import (
-	"crypto/sha256"
 	"encoding/binary"
 	"fmt"
-	"sort"
+	"slices"
 	"time"
 
 	"golang.org/x/crypto/ssh"
@@ -20,8 +19,6 @@ const (
 	krlSectionCertificates = 1
 	krlCertSerialList      = 0x20
 )
-
-func sha256Sum(b []byte) [32]byte { return sha256.Sum256(b) }
 
 func putU32(buf []byte, v uint32) []byte { return binary.BigEndian.AppendUint32(buf, v) }
 func putU64(buf []byte, v uint64) []byte { return binary.BigEndian.AppendUint64(buf, v) }
@@ -68,9 +65,10 @@ func buildKRL(groups []krlCAGroup, krlVersion uint64, comment string) ([]byte, e
 		if err != nil {
 			return nil, fmt.Errorf("parsing CA key: %w", err)
 		}
-		sort.Slice(g.serials, func(i, j int) bool { return g.serials[i] < g.serials[j] })
+		serials := slices.Clone(g.serials) // don't reorder the caller's slice
+		slices.Sort(serials)
 		var serialData []byte
-		for _, s := range g.serials {
+		for _, s := range serials {
 			serialData = putU64(serialData, s)
 		}
 		var certSection []byte

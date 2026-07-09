@@ -24,8 +24,8 @@ func parseValidity(v string) (time.Duration, error) {
 		return 0, fmt.Errorf("bad validity %q", v)
 	}
 	n, err := strconv.Atoi(s[:len(s)-1])
-	if err != nil {
-		return 0, fmt.Errorf("bad validity %q", v)
+	if err != nil || n <= 0 {
+		return 0, fmt.Errorf("bad validity %q (want a positive count + h/d/w, e.g. +13w)", v)
 	}
 	switch s[len(s)-1] {
 	case 'w':
@@ -152,12 +152,19 @@ func assembleTrustFiles(reg *Registry, domain string) error {
 			continue // anchor not yet provisioned — legitimately absent
 		}
 		userLines = append(userLines, strings.TrimRight(string(u), "\n"))
-		if h, err := os.ReadFile(caPubPath(domain, "host", anchor)); err == nil {
-			fields := strings.Fields(string(h))
-			if len(fields) >= 2 {
-				hostLines = append(hostLines,
-					fmt.Sprintf("@cert-authority %s %s %s", pattern, fields[0], fields[1]))
+		// Same guard as the user CA: a provisioned anchor missing its host CA must
+		// not silently drop that anchor's @cert-authority line (which would stop
+		// clients trusting its host certs). Absent + unprovisioned is legitimate.
+		h, herr := os.ReadFile(caPubPath(domain, "host", anchor))
+		if herr != nil {
+			if provisioned {
+				return fmt.Errorf("anchor %q is provisioned but its %s host CA (%s) is missing — pull the full repo before assembling trust files (refusing to silently drop host trust)", anchor, domain, caPubPath(domain, "host", anchor))
 			}
+			continue // not provisioned — legitimately absent
+		}
+		if fields := strings.Fields(string(h)); len(fields) >= 2 {
+			hostLines = append(hostLines,
+				fmt.Sprintf("@cert-authority %s %s %s", pattern, fields[0], fields[1]))
 		}
 	}
 	if len(userLines) == 0 {

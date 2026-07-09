@@ -63,23 +63,28 @@ func cmdDoctor(fix bool) {
 	}
 
 	// ---- external tools --------------------------------------------------------
-	if _, err := exec.LookPath("ssh-keygen"); err != nil {
-		warn("ssh-keygen missing — needed for FIDO2 sk key generation")
+	// FIDO2 sk toolchain — check the actual binary ykt will invoke, NOT just
+	// whether `ssh -Q key` lists the type. On macOS Apple's ssh advertises sk
+	// types while its ssh-keygen can't generate them (no FIDO middleware), so the
+	// -Q test is a false pass. ykt calls a FIDO-capable ssh-keygen by ABSOLUTE
+	// PATH (Homebrew-first on macOS), so the user never has to change their PATH.
+	switch skKeygenStatus() {
+	case skKeygenOK:
+		good("ssh-keygen with FIDO2 support: %s", sshKeygenPath())
+	case skKeygenMissing:
+		warn("ssh-keygen not found — needed for FIDO2 sk key generation")
 		fixes = append(fixes, depFix{problem: "OpenSSH client missing", argvs: opensshFix()})
-	} else if out, err := exec.Command("ssh", "-Q", "key").Output(); err != nil {
-		warn("could not probe ssh key types (`ssh -Q key`: %v) — cannot confirm sk support", err)
-		unknown = true
-	} else if !strings.Contains(string(out), "sk-ssh-ed25519@openssh.com") {
-		warn("ssh lacks security-key (sk) support — hardware-backed ssh keys will fail")
+	case skKeygenNoFIDO:
 		if runtime.GOOS == "darwin" {
-			warn("Apple's bundled OpenSSH disables FIDO support")
-			fixes = append(fixes, depFix{problem: "OpenSSH without sk support",
-				argvs: [][]string{{"brew", "install", "openssh"}}})
+			warn("only macOS's built-in ssh-keygen is present — it has NO FIDO2 support, so sk keys will fail")
+			warn("ykt will call a Homebrew ssh-keygen automatically once installed (no PATH change needed)")
 		} else {
-			fixes = append(fixes, depFix{problem: "OpenSSH too old for sk keys", argvs: opensshFix()})
+			warn("ssh-keygen at %s lacks FIDO2 (sk) support — hardware-backed ssh keys will fail", sshKeygenPath())
 		}
-	} else {
-		good("ssh-keygen present with security-key support")
+		fixes = append(fixes, depFix{problem: "OpenSSH without FIDO2 (sk) support", argvs: opensshFix()})
+	case skKeygenUnknown:
+		warn("could not confirm ssh-keygen FIDO2 support (`ssh -Q key` failed) — proceed with care")
+		unknown = true
 	}
 
 	if _, err := exec.LookPath("ykman"); err != nil {
@@ -320,6 +325,14 @@ func ykmanFix() [][]string {
 		return [][]string{{"brew", "install", "ykman"}}
 	case "windows":
 		return [][]string{{"winget", "install", "--id", "Yubico.YubiKeyManagerCLI", "-e"}}
+	}
+	return nil
+}
+
+// firstFix returns the first command of a fix list (for inline guidance), or nil.
+func firstFix(cmds [][]string) []string {
+	if len(cmds) > 0 {
+		return cmds[0]
 	}
 	return nil
 }

@@ -7,8 +7,20 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 )
+
+func TestBuildKRLDoesNotMutateInput(t *testing.T) {
+	serials := []uint64{300, 100, 200}
+	orig := slices.Clone(serials)
+	if _, err := buildKRL([]krlCAGroup{{caPub: mustSSHPubLine(t), serials: serials}}, 1, "test"); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(serials, orig) {
+		t.Errorf("buildKRL reordered the caller's serials: got %v, want %v", serials, orig)
+	}
+}
 
 func TestWriteKRLFromEnv(t *testing.T) {
 	caPubPath := os.Getenv("KRL_TEST_CA_PUB")

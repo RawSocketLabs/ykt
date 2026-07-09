@@ -50,6 +50,8 @@ func TestParseValidity(t *testing.T) {
 		{"+w", 0, true},             // no number
 		{"", 0, true},
 		{"+abcd", 0, true},
+		{"+0d", 0, true},  // zero span → already-expired cert
+		{"+-3w", 0, true}, // negative span
 	} {
 		d, err := parseValidity(tc.in)
 		if tc.bad {
@@ -153,6 +155,25 @@ func TestSSHHelpers(t *testing.T) {
 	l, err := sshPubFromCryptoPub(pub, "my-comment")
 	if err != nil || !strings.Contains(string(l), "my-comment") {
 		t.Errorf("sshPubFromCryptoPub = %q, err=%v", l, err)
+	}
+}
+
+// TestAssembleTrustFilesHostCAGuard: a provisioned anchor missing its host CA is
+// a hard error (symmetric with the user-CA guard) — never a silent trust drop.
+func TestAssembleTrustFilesHostCAGuard(t *testing.T) {
+	dir := t.TempDir()
+	withTrustHome(t, dir)
+	reg := &Registry{
+		Anchors: map[string]Anchor{"a1": {YubikeySerial: "9749071"}}, // provisioned
+		Domains: map[string]Domain{"work": {Anchors: []string{"a1"}, HostPattern: "*.work.internal"}},
+	}
+	writeFixture(t, dir, filepath.Join("pub", "work_user_ca_a1.pub"), string(mustSSHPubLine(t)))
+	if err := assembleTrustFiles(reg, "work"); err == nil {
+		t.Error("provisioned anchor with user CA present but host CA missing must fail")
+	}
+	writeFixture(t, dir, filepath.Join("pub", "work_host_ca_a1.pub"), string(mustSSHPubLine(t)))
+	if err := assembleTrustFiles(reg, "work"); err != nil {
+		t.Errorf("with both CAs present it should assemble: %v", err)
 	}
 }
 

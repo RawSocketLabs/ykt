@@ -7,6 +7,7 @@ package main
 import (
 	"crypto"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
@@ -28,11 +29,12 @@ func randomSerial() *big.Int {
 // makeClientCACert self-signs the domain client-CA certificate using the
 // on-device slot key.
 func makeClientCACert(signer crypto.Signer, commonName string) (*x509.Certificate, error) {
+	now := time.Now()
 	tpl := &x509.Certificate{
 		SerialNumber:          randomSerial(),
 		Subject:               pkix.Name{CommonName: commonName},
-		NotBefore:             time.Now().Add(-5 * time.Minute),
-		NotAfter:              time.Now().AddDate(10, 0, 0),
+		NotBefore:             now.Add(-5 * time.Minute),
+		NotAfter:              now.AddDate(10, 0, 0),
 		BasicConstraintsValid: true,
 		IsCA:                  true,
 		MaxPathLen:            0,
@@ -61,11 +63,12 @@ func signClientCert(caCert *x509.Certificate, caSigner crypto.Signer, csrPEM []b
 	if err := csr.CheckSignature(); err != nil {
 		return nil, fmt.Errorf("CSR signature invalid: %w", err)
 	}
+	now := time.Now()
 	tpl := &x509.Certificate{
 		SerialNumber: new(big.Int).SetUint64(serial),
 		Subject:      csr.Subject,
-		NotBefore:    time.Now().Add(-5 * time.Minute),
-		NotAfter:     time.Now().AddDate(0, 0, days),
+		NotBefore:    now.Add(-5 * time.Minute),
+		NotAfter:     now.AddDate(0, 0, days),
 		KeyUsage:     x509.KeyUsageDigitalSignature,
 		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
 	}
@@ -97,6 +100,8 @@ func loadCertPEM(path string) (*x509.Certificate, error) {
 	}
 	return x509.ParseCertificate(block.Bytes)
 }
+
+func sha256Sum(b []byte) [32]byte { return sha256.Sum256(b) }
 
 func certSHA256Full(cert *x509.Certificate) string {
 	sum := sha256Sum(cert.Raw)

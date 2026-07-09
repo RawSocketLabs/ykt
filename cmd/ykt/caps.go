@@ -55,7 +55,9 @@ func capsFor(yk pivKey) ykCaps {
 // key, using resident + Ed25519 where supported. verifyRequired adds
 // PIN-per-use (independent of touch) when the operator opts in.
 func (c ykCaps) sshKeygenArgs(keyFile string, verifyRequired bool) []string {
-	argv := []string{"ssh-keygen", "-t", c.SSHKeyType, "-O", "application=" + fidoApplication, "-N", ""}
+	// Absolute path to a FIDO-capable ssh-keygen (Homebrew-first on macOS) so we
+	// never depend on the user's PATH ordering.
+	argv := []string{sshKeygenPath(), "-t", c.SSHKeyType, "-O", "application=" + fidoApplication, "-N", ""}
 	if c.ResidentSSH {
 		argv = append(argv, "-O", "resident")
 	}
