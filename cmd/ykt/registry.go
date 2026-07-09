@@ -132,15 +132,26 @@ func (d Domain) HeldBy(anchor string) bool {
 // BaseZone turns "*.example.internal" into "example.internal".
 func (d Domain) BaseZone() string { return strings.TrimPrefix(d.HostPattern, "*.") }
 
+// schemaVersion is the config.toml / on-disk store data-model version this tool
+// speaks. Bump it when config.toml's schema or the store layout changes in a way
+// that needs migration, and add handling for older versions at that time. A
+// store written by a NEWER ykt (higher schema_version) is refused rather than
+// silently misread.
+const schemaVersion = 1
+
 type Registry struct {
-	Anchors map[string]Anchor `toml:"anchors"`
-	Domains map[string]Domain `toml:"domains"`
+	SchemaVersion int               `toml:"schema_version"` // 0/absent = legacy v1
+	Anchors       map[string]Anchor `toml:"anchors"`
+	Domains       map[string]Domain `toml:"domains"`
 }
 
 func loadRegistry() *Registry {
 	var r Registry
 	if _, err := toml.DecodeFile(trustPath("config.toml"), &r); err != nil {
 		fatal("parsing config.toml: %v", err)
+	}
+	if err := checkSchemaVersion(r.SchemaVersion); err != nil {
+		fatal("%v", err)
 	}
 	if len(r.Domains) == 0 {
 		fatal("config.toml defines no [domains.*]")
@@ -149,6 +160,16 @@ func loadRegistry() *Registry {
 		fatal("invalid config.toml: %v", err)
 	}
 	return &r
+}
+
+// checkSchemaVersion refuses a store written by a NEWER ykt (its schema may carry
+// fields/semantics this build can't honor). Absent (0) means a legacy store from
+// before the field existed — treated as v1.
+func checkSchemaVersion(v int) error {
+	if v > schemaVersion {
+		return fmt.Errorf("this store needs a newer ykt: config schema_version %d, this build supports %d — update: go install github.com/RawSocketLabs/ykt/cmd/ykt@latest", v, schemaVersion)
+	}
+	return nil
 }
 
 // validateRegistry catches config.toml mistakes that would otherwise surface

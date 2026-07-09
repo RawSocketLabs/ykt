@@ -502,6 +502,11 @@ func cmdStatus() {
 	reg := loadRegistry()
 	inv := loadInventory()
 	head("registry")
+	sv := reg.SchemaVersion
+	if sv == 0 {
+		sv = schemaVersion // legacy stores predate the field
+	}
+	say("  schema v%d", sv)
 	for _, dn := range reg.domainNames() {
 		d := reg.Domains[dn]
 		say("  %-6s anchors[%s]  slots u/%s h/%s t/%s c/%s  pattern %s",

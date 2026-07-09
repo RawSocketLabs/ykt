@@ -13,6 +13,10 @@
 #             domain: 82/83/9c, 84/85/86, 87/88/89, 8a/8b/8c, … Standard slots
 #             9a/9d/9e are good client_slots on daily keys.
 
+# schema_version pins the config/store data model. Leave it as-is — ykt refuses
+# a store written by a newer version so an outdated tool can't misread it.
+schema_version = 1
+
 [anchors.a1]
 holder = "operator-1"
 location = "site-a-safe"

@@ -15,6 +15,18 @@ func validFixture() *Registry {
 	}
 }
 
+func TestCheckSchemaVersion(t *testing.T) {
+	if err := checkSchemaVersion(0); err != nil {
+		t.Error("legacy store (schema_version absent = 0) must be accepted")
+	}
+	if err := checkSchemaVersion(schemaVersion); err != nil {
+		t.Error("the current schema version must be accepted")
+	}
+	if err := checkSchemaVersion(schemaVersion + 1); err == nil {
+		t.Error("a store from a newer ykt must be refused")
+	}
+}
+
 func TestValidateRegistry(t *testing.T) {
 	if err := validateRegistry(validFixture()); err != nil {
 		t.Fatalf("valid config rejected: %v", err)
