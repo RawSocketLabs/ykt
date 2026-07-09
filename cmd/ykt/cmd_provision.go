@@ -147,56 +147,15 @@ func cmdInitCA(args []string) {
 			act(fmt.Sprintf("[%s] generate %s CA key in %s + attestation", dn, role, slotHint(slotName)), "",
 				func() error {
 					var err error
-					pub, err = generateOnDevice(yk, mk, slotName)
-					if err != nil {
-						return err
-					}
-					if err := writePubPEM(caPubPEMPath(anchorName, dn, role), pub); err != nil {
-						return err
-					}
-					cert, err := attest(yk, slotName)
-					if err != nil {
-						return err
-					}
-					return writeCertPEM(caAttestPath(anchorName, dn, role), cert)
+					pub, err = genesisGenerateSlot(yk, mk, anchorName, dn, role, slotName)
+					return err
 				})
-
 			if role == "tls" {
 				actTouch(fmt.Sprintf("[%s] issue + store the client-CA certificate (CA:TRUE) in slot %s", dn, slotName), "",
-					func() error {
-						signer, err := pivSigner(yk, slotName, pub, pin)
-						if err != nil {
-							return err
-						}
-						cert, err := makeClientCACert(signer, fmt.Sprintf("ykt %s client CA %s", dn, anchorName))
-						if err != nil {
-							return err
-						}
-						if err := setSlotCertificate(yk, mk, slotName, cert); err != nil {
-							return err
-						}
-						return writeCertPEM(clientCACertPath(dn, anchorName), cert)
-					})
+					func() error { return genesisStoreSlotCert(yk, mk, pin, anchorName, dn, role, slotName, pub) })
 			} else {
 				actTouch(fmt.Sprintf("[%s] export OpenSSH %s CA public key + store marker certificate", dn, role), "",
-					func() error {
-						line, err := sshPubFromCryptoPub(pub, fmt.Sprintf("%s-%s-ca-%s", dn, role, anchorName))
-						if err != nil {
-							return err
-						}
-						if err := writeFileAtomic(caPubPath(dn, role, anchorName), line, 0o644); err != nil {
-							return err
-						}
-						signer, err := pivSigner(yk, slotName, pub, pin)
-						if err != nil {
-							return err
-						}
-						cert, err := makeClientCACert(signer, fmt.Sprintf("ykt %s %s CA %s", dn, role, anchorName))
-						if err != nil {
-							return err
-						}
-						return setSlotCertificate(yk, mk, slotName, cert)
-					})
+					func() error { return genesisStoreSlotCert(yk, mk, pin, anchorName, dn, role, slotName, pub) })
 			}
 		}
 	}
@@ -513,6 +472,64 @@ func cleanPrincipals(s string) []string {
 		}
 	}
 	return out
+}
+
+// genesisGenerateSlot generates a CA key on-device for (domain,role), writes its
+// public-key PEM and slot attestation, and returns the public key. First half of
+// a slot's genesis; the caller then stores the slot certificate.
+func genesisGenerateSlot(yk pivKey, mk []byte, anchorName, dn, role, slotName string) (crypto.PublicKey, error) {
+	pub, err := generateOnDevice(yk, mk, slotName)
+	if err != nil {
+		return nil, err
+	}
+	if err := writePubPEM(caPubPEMPath(anchorName, dn, role), pub); err != nil {
+		return nil, err
+	}
+	cert, err := attest(yk, slotName)
+	if err != nil {
+		return nil, err
+	}
+	if err := writeCertPEM(caAttestPath(anchorName, dn, role), cert); err != nil {
+		return nil, err
+	}
+	return pub, nil
+}
+
+// genesisStoreSlotCert issues and stores the slot certificate for a freshly
+// generated CA key: a CA:TRUE client-CA cert for tls (also published to pub/), or
+// an OpenSSH CA pub + marker cert for user/host. Each branch keeps the ceremony's
+// original step order.
+func genesisStoreSlotCert(yk pivKey, mk []byte, pin, anchorName, dn, role, slotName string, pub crypto.PublicKey) error {
+	if role == "tls" {
+		signer, err := pivSigner(yk, slotName, pub, pin)
+		if err != nil {
+			return err
+		}
+		cert, err := makeClientCACert(signer, fmt.Sprintf("ykt %s client CA %s", dn, anchorName))
+		if err != nil {
+			return err
+		}
+		if err := setSlotCertificate(yk, mk, slotName, cert); err != nil {
+			return err
+		}
+		return writeCertPEM(clientCACertPath(dn, anchorName), cert)
+	}
+	line, err := sshPubFromCryptoPub(pub, fmt.Sprintf("%s-%s-ca-%s", dn, role, anchorName))
+	if err != nil {
+		return err
+	}
+	if err := writeFileAtomic(caPubPath(dn, role, anchorName), line, 0o644); err != nil {
+		return err
+	}
+	signer, err := pivSigner(yk, slotName, pub, pin)
+	if err != nil {
+		return err
+	}
+	cert, err := makeClientCACert(signer, fmt.Sprintf("ykt %s %s CA %s", dn, role, anchorName))
+	if err != nil {
+		return err
+	}
+	return setSlotCertificate(yk, mk, slotName, cert)
 }
 
 // classifyQueueEntry maps a queue filename to its (kind, id): user_<id>.pub,
