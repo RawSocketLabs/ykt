@@ -379,22 +379,7 @@ func cmdInitUser(args []string, keep, verifyRequired bool) {
 			})
 		}
 		actTouch(fmt.Sprintf("[%s] create a CSR into the queue", dn), "", func() error {
-			if pub == nil { // --keep or generate skipped — recover from the slot
-				cert, err := attest(yk, slot)
-				if err != nil {
-					return fmt.Errorf("slot %s public key unavailable (no key in slot? run without --keep): %w", slot, err)
-				}
-				pub = cert.PublicKey
-			}
-			signer, err := pivSigner(yk, slot, pub, pin)
-			if err != nil {
-				return err
-			}
-			csr, err := makeCSR(signer, fmt.Sprintf("%s@%s", person, dn))
-			if err != nil {
-				return err
-			}
-			return writeFileAtomic(trustPath("queue", dn, queueTLSName(person, hostname)), csr, 0o644)
+			return enrollTLSCSR(yk, pin, person, hostname, dn, slot, pub)
 		})
 	}
 	for _, dn := range domains {
@@ -413,15 +398,7 @@ func cmdInitUser(args []string, keep, verifyRequired bool) {
 			// dedup: skip @cert-authority lines already present (re-enroll must
 			// not accumulate duplicates).
 			existing, _ := os.ReadFile(khPath)
-			var toAdd []string
-			for _, l := range strings.Split(strings.TrimRight(string(lines), "\n"), "\n") {
-				if l == "" || strings.HasPrefix(l, "#") {
-					continue
-				}
-				if !strings.Contains(string(existing), l) {
-					toAdd = append(toAdd, l)
-				}
-			}
+			toAdd := newKnownHostsLines(string(existing), string(lines))
 			if len(toAdd) == 0 {
 				return nil
 			}
@@ -530,6 +507,43 @@ func genesisStoreSlotCert(yk pivKey, mk []byte, pin, anchorName, dn, role, slotN
 		return err
 	}
 	return setSlotCertificate(yk, mk, slotName, cert)
+}
+
+// enrollTLSCSR creates an mTLS client CSR for person@domain from the daily key's
+// client slot and drops it into the signing queue. If pub is nil (e.g. --keep),
+// it recovers the slot's public key via attestation.
+func enrollTLSCSR(yk pivKey, pin, person, hostname, dn, slot string, pub crypto.PublicKey) error {
+	if pub == nil { // --keep or generate skipped — recover from the slot
+		cert, err := attest(yk, slot)
+		if err != nil {
+			return fmt.Errorf("slot %s public key unavailable (no key in slot? run without --keep): %w", slot, err)
+		}
+		pub = cert.PublicKey
+	}
+	signer, err := pivSigner(yk, slot, pub, pin)
+	if err != nil {
+		return err
+	}
+	csr, err := makeCSR(signer, fmt.Sprintf("%s@%s", person, dn))
+	if err != nil {
+		return err
+	}
+	return writeFileAtomic(trustPath("queue", dn, queueTLSName(person, hostname)), csr, 0o644)
+}
+
+// newKnownHostsLines returns the @cert-authority lines from caLines that aren't
+// already present in existing — so re-enrollment never accumulates duplicates.
+func newKnownHostsLines(existing, caLines string) []string {
+	var toAdd []string
+	for _, l := range strings.Split(strings.TrimRight(caLines, "\n"), "\n") {
+		if l == "" || strings.HasPrefix(l, "#") {
+			continue
+		}
+		if !strings.Contains(existing, l) {
+			toAdd = append(toAdd, l)
+		}
+	}
+	return toAdd
 }
 
 // classifyQueueEntry maps a queue filename to its (kind, id): user_<id>.pub,
