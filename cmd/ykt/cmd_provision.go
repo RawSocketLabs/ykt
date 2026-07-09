@@ -515,6 +515,108 @@ func cleanPrincipals(s string) []string {
 	return out
 }
 
+// classifyQueueEntry maps a queue filename to its (kind, id): user_<id>.pub,
+// host_<id>.pub, or tls_<id>.csr. ok is false for anything else. Pure.
+func classifyQueueEntry(name string) (kind, id string, ok bool) {
+	switch {
+	case strings.HasPrefix(name, "user_") && strings.HasSuffix(name, ".pub"):
+		return "user", strings.TrimSuffix(strings.TrimPrefix(name, "user_"), ".pub"), true
+	case strings.HasPrefix(name, "host_") && strings.HasSuffix(name, ".pub"):
+		return "host", strings.TrimSuffix(strings.TrimPrefix(name, "host_"), ".pub"), true
+	case strings.HasPrefix(name, "tls_") && strings.HasSuffix(name, ".csr"):
+		return "tls", strings.TrimSuffix(strings.TrimPrefix(name, "tls_"), ".csr"), true
+	}
+	return "", "", false
+}
+
+// executeSignJob signs one queued request and records it, in a fixed order:
+// sign → write dist (atomic) → append ledger (idempotent by serial) → move the
+// queue file to done/. Returns whether it signed. The payload was captured at
+// gather time, so a retry re-runs safely. Takes yk as a pivKey so it's testable
+// against a software backend.
+func executeSignJob(yk pivKey, anchorName string, anchor Anchor, pin string, j signJob) bool {
+	switch j.kind {
+	case "user", "host":
+		slotName := j.d.UserSlot
+		certType := uint32(ssh.UserCert)
+		if j.kind == "host" {
+			slotName = j.d.HostSlot
+			certType = ssh.HostCert
+		}
+		principals := cleanPrincipals(j.principals)
+		if len(principals) == 0 {
+			warn("[%s] %s has no usable principals — skipping (a cert with no principal can never authenticate)", j.domain, j.id)
+			return false
+		}
+		serialNum := nextSerial(j.domain, anchor)
+		distName := distHostCertName(j.id)
+		if j.kind == "user" {
+			distName = "user_" + j.id + "-cert.pub"
+		}
+		distRel := "dist/" + j.domain + "/" + distName
+		return actTouch(fmt.Sprintf("[%s] sign %s cert %s (serial %d)", j.domain, j.kind, j.id, serialNum), "",
+			func() error {
+				caPub, err := slotPublicKey(yk, slotName)
+				if err != nil {
+					return err
+				}
+				signer, err := pivSigner(yk, slotName, caPub, pin)
+				if err != nil {
+					return err
+				}
+				cert, err := signSSHCert(signer, certSpec{
+					certType: certType, keyID: j.domain + ":" + j.id, serial: serialNum,
+					principals: principals, validity: j.validity,
+				}, j.payload)
+				if err != nil {
+					return err
+				}
+				if err := writeFileAtomic(trustPath("dist", j.domain, distName), cert, 0o644); err != nil {
+					return err
+				}
+				if err := appendLedgerOnce(j.domain, LedgerEntry{Serial: serialNum, Type: j.kind,
+					Identity: j.id, Principals: strings.Join(principals, ","), Anchor: anchorName,
+					Signed: today(), Expires: expiryFromValidity(j.validity), File: distRel}); err != nil {
+					return err
+				}
+				return moveToDone(j.qfile, j.domain)
+			})
+	case "tls":
+		distName := "tls_" + j.id + ".crt"
+		distRel := "dist/" + j.domain + "/" + distName
+		serialNum := nextSerial(j.domain, anchor)
+		return actTouch(fmt.Sprintf("[%s] sign TLS client cert %s (serial %d, %d days)", j.domain, j.id, serialNum, j.d.TLSValidityDays), "",
+			func() error {
+				caCert, err := loadCertPEM(clientCACertPath(j.domain, anchorName))
+				if err != nil {
+					return err
+				}
+				caPub, err := slotPublicKey(yk, j.d.TLSSlot)
+				if err != nil {
+					return err
+				}
+				signer, err := pivSigner(yk, j.d.TLSSlot, caPub, pin)
+				if err != nil {
+					return err
+				}
+				certPEM, err := signClientCert(caCert, signer, j.payload, j.d.TLSValidityDays, serialNum)
+				if err != nil {
+					return err
+				}
+				if err := writeFileAtomic(trustPath("dist", j.domain, distName), certPEM, 0o644); err != nil {
+					return err
+				}
+				if err := appendLedgerOnce(j.domain, LedgerEntry{Serial: serialNum, Type: "tls", Identity: j.id,
+					Principals: "-", Anchor: anchorName, Signed: today(),
+					Expires: expiryDays(j.d.TLSValidityDays), File: distRel}); err != nil {
+					return err
+				}
+				return moveToDone(j.qfile, j.domain)
+			})
+	}
+	return false
+}
+
 func cmdSign(args []string) {
 	if len(args) != 1 {
 		fatal("usage: ykt cert sign <a1|a2>")
@@ -536,8 +638,12 @@ func cmdSign(args []string) {
 			continue
 		}
 		for _, ent := range entries {
-			name := ent.Name()
 			if ent.IsDir() {
+				continue
+			}
+			name := ent.Name()
+			kind, id, ok := classifyQueueEntry(name)
+			if !ok {
 				continue
 			}
 			qfile := filepath.Join(qdir, name)
@@ -545,9 +651,8 @@ func cmdSign(args []string) {
 			if rerr != nil {
 				continue
 			}
-			switch {
-			case strings.HasPrefix(name, "user_") && strings.HasSuffix(name, ".pub"):
-				id := strings.TrimSuffix(strings.TrimPrefix(name, "user_"), ".pub")
+			switch kind {
+			case "user":
 				say("\n[%s] user request %s", domainName, id)
 				say("  %s", sshFingerprint(payload))
 				if !dryRun && !confirm("  Fingerprint verified out-of-band (or local request)?") {
@@ -559,8 +664,7 @@ func cmdSign(args []string) {
 					principals = promptDefault("principals", d.DefaultPrincipal)
 				}
 				jobs = append(jobs, signJob{domainName, d, "user", id, qfile, payload, principals, d.UserValidity})
-			case strings.HasPrefix(name, "host_") && strings.HasSuffix(name, ".pub"):
-				id := strings.TrimSuffix(strings.TrimPrefix(name, "host_"), ".pub")
+			case "host":
 				def := strings.Join(Machine{}.principals(id, d), ",")
 				if m, ok := inv.Machines[id]; ok {
 					def = strings.Join(m.principals(id, d), ",")
@@ -571,8 +675,7 @@ func cmdSign(args []string) {
 					principals = promptDefault("principals (hostnames/IPs)", def)
 				}
 				jobs = append(jobs, signJob{domainName, d, "host", id, qfile, payload, principals, d.HostValidity})
-			case strings.HasPrefix(name, "tls_") && strings.HasSuffix(name, ".csr"):
-				id := strings.TrimSuffix(strings.TrimPrefix(name, "tls_"), ".csr")
+			case "tls":
 				jobs = append(jobs, signJob{domainName, d, "tls", id, qfile, payload, "-",
 					fmt.Sprintf("+%dd", d.TLSValidityDays)})
 			}
@@ -604,96 +707,10 @@ func cmdSign(args []string) {
 	}
 
 	// ---- execute -----------------------------------------------------------
-	// Ordering per job: sign → write dist (atomic) → append ledger
-	// (idempotent by serial) → move queue file to done/ (idempotent). A failure
-	// or [r]etry at any point re-runs safely because we sign the payload bytes
-	// captured at gather time (not a re-read of the queue file, which may have
-	// been moved or changed) and the ledger append is a no-op if already done.
 	signed := 0
 	for _, j := range jobs {
-		j := j
-		switch j.kind {
-		case "user", "host":
-			slotName := j.d.UserSlot
-			certType := uint32(ssh.UserCert)
-			if j.kind == "host" {
-				slotName = j.d.HostSlot
-				certType = ssh.HostCert
-			}
-			principals := cleanPrincipals(j.principals)
-			if len(principals) == 0 {
-				warn("[%s] %s has no usable principals — skipping (a cert with no principal can never authenticate)", j.domain, j.id)
-				continue
-			}
-			serialNum := nextSerial(j.domain, anchor)
-			distName := distHostCertName(j.id)
-			if j.kind == "user" {
-				distName = "user_" + j.id + "-cert.pub"
-			}
-			distRel := "dist/" + j.domain + "/" + distName
-			if actTouch(fmt.Sprintf("[%s] sign %s cert %s (serial %d)", j.domain, j.kind, j.id, serialNum), "",
-				func() error {
-					caPub, err := slotPublicKey(yk, slotName)
-					if err != nil {
-						return err
-					}
-					signer, err := pivSigner(yk, slotName, caPub, pin)
-					if err != nil {
-						return err
-					}
-					cert, err := signSSHCert(signer, certSpec{
-						certType: certType, keyID: j.domain + ":" + j.id, serial: serialNum,
-						principals: principals, validity: j.validity,
-					}, j.payload)
-					if err != nil {
-						return err
-					}
-					if err := writeFileAtomic(trustPath("dist", j.domain, distName), cert, 0o644); err != nil {
-						return err
-					}
-					if err := appendLedgerOnce(j.domain, LedgerEntry{Serial: serialNum, Type: j.kind,
-						Identity: j.id, Principals: strings.Join(principals, ","), Anchor: anchorName,
-						Signed: today(), Expires: expiryFromValidity(j.validity), File: distRel}); err != nil {
-						return err
-					}
-					return moveToDone(j.qfile, j.domain)
-				}) {
-				signed++
-			}
-		case "tls":
-			distName := "tls_" + j.id + ".crt"
-			distRel := "dist/" + j.domain + "/" + distName
-			serialNum := nextSerial(j.domain, anchor)
-			if actTouch(fmt.Sprintf("[%s] sign TLS client cert %s (serial %d, %d days)", j.domain, j.id, serialNum, j.d.TLSValidityDays), "",
-				func() error {
-					caCert, err := loadCertPEM(clientCACertPath(j.domain, anchorName))
-					if err != nil {
-						return err
-					}
-					caPub, err := slotPublicKey(yk, j.d.TLSSlot)
-					if err != nil {
-						return err
-					}
-					signer, err := pivSigner(yk, j.d.TLSSlot, caPub, pin)
-					if err != nil {
-						return err
-					}
-					certPEM, err := signClientCert(caCert, signer, j.payload, j.d.TLSValidityDays, serialNum)
-					if err != nil {
-						return err
-					}
-					if err := writeFileAtomic(trustPath("dist", j.domain, distName), certPEM, 0o644); err != nil {
-						return err
-					}
-					if err := appendLedgerOnce(j.domain, LedgerEntry{Serial: serialNum, Type: "tls", Identity: j.id,
-						Principals: "-", Anchor: anchorName, Signed: today(),
-						Expires: expiryDays(j.d.TLSValidityDays), File: distRel}); err != nil {
-						return err
-					}
-					return moveToDone(j.qfile, j.domain)
-				}) {
-				signed++
-			}
+		if executeSignJob(yk, anchorName, anchor, pin, j) {
+			signed++
 		}
 	}
 

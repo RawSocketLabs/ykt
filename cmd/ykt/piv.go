@@ -111,7 +111,15 @@ func listYubiKeys() (map[uint32]string, error) {
 //     anchor is — verify it's connected and confirm once. No typing.
 //   - one key connected: confirm it. Several: type the serial (the guard
 //     that keeps an anchor operation off a daily-carry key).
+//
+// pickYubiKeyHook lets tests substitute a fake device (and skip enumeration).
+// nil in production.
+var pickYubiKeyHook func(expected string) (pivKey, uint32)
+
 func pickYubiKey(expected string) (pivKey, uint32) {
+	if pickYubiKeyHook != nil {
+		return pickYubiKeyHook(expected)
+	}
 	head("YubiKey selection")
 	if dryRun {
 		// Honor the contract: --dry-run touches no hardware. Don't enumerate or

@@ -80,7 +80,13 @@ func confirm(q string) bool {
 	return strings.HasPrefix(strings.ToLower(v), "y")
 }
 
+// promptSecretFn lets tests supply secrets (PIN/PUK) without a TTY. nil in prod.
+var promptSecretFn func(q string) string
+
 func promptSecret(q string) string {
+	if promptSecretFn != nil {
+		return promptSecretFn(q)
+	}
 	fmt.Print(q)
 	b, err := term.ReadPassword(int(os.Stdin.Fd()))
 	fmt.Println()
