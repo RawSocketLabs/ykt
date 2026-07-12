@@ -40,7 +40,13 @@ func isTrustStore(dir string) bool {
 // in, which is what `setup home` (no arg) records.
 func storeFromEnvOrCWD() string {
 	if h := os.Getenv("YKT_HOME"); h != "" {
-		return h
+		if isTrustStore(h) {
+			return h
+		}
+		// Explicit but invalid: do NOT fall back to the CWD walk — silently
+		// operating on a different store than the one you named is a footgun.
+		// requireTrustHome reports this clearly; best-effort callers get "".
+		return ""
 	}
 	if wd, err := os.Getwd(); err == nil {
 		for d := wd; ; {
@@ -67,6 +73,12 @@ func initTrustHome() bool {
 		trustHome = dir
 		return true
 	}
+	// An explicit-but-invalid YKT_HOME must not be masked by a binary-relative or
+	// pointer store — surface it (requireTrustHome does) rather than silently
+	// using a store the operator never named.
+	if os.Getenv("YKT_HOME") != "" {
+		return false
+	}
 	// a store next to the binary (dev builds placed inside a store)
 	if exe, err := os.Executable(); err == nil {
 		for _, dir := range []string{filepath.Dir(exe), filepath.Dir(filepath.Dir(exe))} {
@@ -86,9 +98,13 @@ func initTrustHome() bool {
 
 // requireTrustHome is initTrustHome for commands that genuinely need a repo.
 func requireTrustHome() {
-	if !initTrustHome() {
-		fatal("cannot locate config.toml — run from inside your ykt store, set $YKT_HOME, or record it once with `ykt setup home <path>`")
+	if initTrustHome() {
+		return
 	}
+	if h := os.Getenv("YKT_HOME"); h != "" {
+		fatal("$YKT_HOME=%s is not a ykt trust store (needs a config.toml with a [domains] section) — fix it or unset $YKT_HOME", h)
+	}
+	fatal("cannot locate config.toml — run from inside your ykt store, set $YKT_HOME, or record it once with `ykt setup home <path>`")
 }
 
 func trustPath(parts ...string) string {

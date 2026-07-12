@@ -111,6 +111,7 @@ func cmdInitHost(domains []string, multi bool, breakGlassFile string) {
 		})
 	}
 	act("write "+hostTrustDropIn, "", func() error {
+		backupDropIn(hostTrustDropIn) // so a failed sshd -t restores the prior one
 		return writeFileAtomic(hostTrustDropIn, []byte(dropIn), 0o644)
 	})
 	for _, dn := range queueDomains {
@@ -130,7 +131,8 @@ func cmdInitHost(domains []string, multi bool, breakGlassFile string) {
 			})
 	}
 
-	act("validate and reload sshd", "Reload runs ONLY if sshd -t passes.", validateReloadLocalSSHD)
+	act("validate and reload sshd", "Reload runs ONLY if sshd -t passes.",
+		func() error { return validateReloadLocalSSHD(hostTrustDropIn) })
 
 	// ---- guided validation ---------------------------------------------------
 	head("Validate — DO NOT close this terminal")
@@ -171,10 +173,12 @@ func cmdInitHost(domains []string, multi bool, breakGlassFile string) {
 		}
 	}
 	act("write "+hostTrustNoPass, "", func() error {
+		backupDropIn(hostTrustNoPass)
 		return writeFileAtomic(hostTrustNoPass,
 			[]byte("# managed by ykt init host\nPasswordAuthentication no\nKbdInteractiveAuthentication no\n"), 0o644)
 	})
-	act("validate and reload sshd", "Reload runs ONLY if sshd -t passes.", validateReloadLocalSSHD)
+	act("validate and reload sshd", "Reload runs ONLY if sshd -t passes.",
+		func() error { return validateReloadLocalSSHD(hostTrustNoPass) })
 	warn("Password auth is OFF. Keep out-of-band access (console/IPMI/provider")
 	warn("console) and the break-glass key current. To undo:")
 	say("  sudo rm %s && sudo systemctl reload sshd", hostTrustNoPass)
@@ -243,14 +247,14 @@ func installBreakGlass(pubFile string) {
 				return nil
 			}
 			sshDir := filepath.Dir(akPath)
-			_, dirExisted := os.Stat(sshDir)
+			_, statErr := os.Stat(sshDir)
+			dirIsNew := os.IsNotExist(statErr)
 			if err := os.MkdirAll(sshDir, 0o700); err != nil {
 				return err
 			}
-			// If WE created ~/.ssh (didn't exist), hand it to the account so the
-			// operator isn't locked out of their own SSH dir. Don't touch a
-			// pre-existing dir's ownership.
-			if dirExisted != nil {
+			// If WE created ~/.ssh, hand it to the account so the operator isn't
+			// locked out of their own SSH dir. Don't touch a pre-existing dir.
+			if dirIsNew {
 				if err := os.Chown(sshDir, uid, gid); err != nil {
 					return err
 				}
@@ -300,20 +304,48 @@ func resolveSbin(name string) string {
 	return name
 }
 
+// dropInBackupSuffix marks a saved-aside drop-in. It deliberately does NOT end
+// in .conf, so sshd's `Include *.conf` never loads a stray backup.
+const dropInBackupSuffix = ".ykt-bak"
+
+// backupDropIn copies an existing drop-in aside before it is overwritten, so a
+// failed sshd -t can restore the previous WORKING config instead of leaving the
+// host with none. No-op if the file doesn't exist (a fresh install).
+func backupDropIn(path string) {
+	if data, err := os.ReadFile(path); err == nil {
+		_ = os.WriteFile(path+dropInBackupSuffix, data, 0o644)
+	}
+}
+
+// restoreDropIn undoes a write: restore the pre-write backup if one exists, else
+// remove the file we added; then clear the backup.
+func restoreDropIn(path string) {
+	if data, err := os.ReadFile(path + dropInBackupSuffix); err == nil {
+		_ = os.WriteFile(path, data, 0o644)
+	} else {
+		_ = os.Remove(path)
+	}
+	_ = os.Remove(path + dropInBackupSuffix)
+}
+
 // validateReloadLocalSSHD runs `sshd -t` and reloads ONLY if it passes, as one
 // step — so a skipped/failed validation can never leave a reloaded-but-broken
-// daemon.
-func validateReloadLocalSSHD() error {
+// daemon. On failure it reverts each drop-in written THIS step to its previous
+// working state (or removes it if it was new), so a bad re-install never nukes a
+// working config and a later reboot can't activate one that fails sshd -t.
+func validateReloadLocalSSHD(wrote ...string) error {
 	if dryRun {
 		return nil
 	}
 	sshd := resolveSbin("sshd")
 	if out, err := exec.Command(sshd, "-t").CombinedOutput(); err != nil {
-		// Roll back the ykt drop-ins so a later reboot/reload can't activate a
-		// config that fails sshd -t (which would stop sshd from starting).
-		_ = os.Remove(hostTrustDropIn)
-		_ = os.Remove(hostTrustNoPass)
-		return fmt.Errorf("`%s -t` FAILED — drop-in rolled back, not applied: %s", sshd, strings.TrimSpace(string(out)))
+		for _, f := range wrote {
+			restoreDropIn(f)
+		}
+		return fmt.Errorf("`%s -t` FAILED — reverted the drop-in(s), not applied: %s", sshd, strings.TrimSpace(string(out)))
+	}
+	for _, f := range wrote {
+		_ = os.Remove(f + dropInBackupSuffix) // success — discard the backups
 	}
 	return reloadSSHD()
 }
