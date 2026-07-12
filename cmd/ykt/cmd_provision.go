@@ -27,6 +27,35 @@ func domainRoleSlots(d Domain) []roleSlot {
 	return []roleSlot{{"user", d.UserSlot}, {"host", d.HostSlot}, {"tls", d.TLSSlot}}
 }
 
+// anchorDomainState classifies each domain on an anchor from the published CA
+// material on disk: fully "present" (all three role artifacts), "missing" (none),
+// or "partial" (some but not all — an interrupted genesis). Callers refuse to go
+// additive when any domain is partial, so half-provisioned anchors are never
+// silently skipped.
+func anchorDomainState(anchorName string, domains []string) (missing, present, partial []string) {
+	for _, dn := range domains {
+		have := 0
+		for _, p := range []string{
+			caPubPath(dn, "user", anchorName),
+			caPubPath(dn, "host", anchorName),
+			clientCACertPath(dn, anchorName),
+		} {
+			if _, err := os.Stat(p); err == nil {
+				have++
+			}
+		}
+		switch have {
+		case 3:
+			present = append(present, dn)
+		case 0:
+			missing = append(missing, dn)
+		default:
+			partial = append(partial, dn)
+		}
+	}
+	return
+}
+
 // ---------------------------------------------------------------- init ca
 
 func cmdInitCA(args []string) {
@@ -47,17 +76,21 @@ func cmdInitCA(args []string) {
 		good("preflight: firmware %d.%d.%d", v.Major, v.Minor, v.Patch)
 	}
 
-	// Decide genesis vs additive by inspecting existing published CA material
-	// AND on-device slot occupancy. A domain is "present" if its user CA pub
-	// file exists; additive mode generates only the missing domains and never
-	// factory-resets (which would destroy the existing CA keys).
-	var missing, present []string
-	for _, dn := range allDomains {
-		if _, err := os.Stat(caPubPath(dn, "user", anchorName)); err == nil {
-			present = append(present, dn)
-		} else {
-			missing = append(missing, dn)
-		}
+	// Decide genesis vs additive from the published CA material on disk. A domain
+	// counts as fully provisioned only when ALL THREE role artifacts exist (user +
+	// host OpenSSH CA pubs and the tls client-CA cert): checking only the user pub
+	// would misread a genesis that finished the user slot but failed before
+	// host/tls as "present", then additively SKIP it — leaving host/tls CA keys
+	// ungenerated and host-cert signing silently broken. Additive mode generates
+	// only the missing domains and never factory-resets (which would destroy the
+	// existing CA keys).
+	missing, present, partial := anchorDomainState(anchorName, allDomains)
+	if len(partial) > 0 {
+		fatal("anchor %q is PARTIALLY provisioned for domain(s): %s\n"+
+			"  A previous genesis was interrupted — some CA material exists, some is missing.\n"+
+			"  Recover before continuing: re-run a full genesis (remove this anchor's pub/\n"+
+			"  files for those domains and reset the key), or finish the missing slots by\n"+
+			"  hand. Refusing to silently skip them.", anchorName, strings.Join(partial, " "))
 	}
 	genesis := len(present) == 0
 	domains := missing // domains we will actually generate this run
