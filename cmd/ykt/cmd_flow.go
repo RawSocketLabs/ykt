@@ -110,13 +110,12 @@ func assessFlow() (actions []flowAction, notes []string) {
 		if len(domains) == 0 {
 			continue
 		}
-		var present, missing []string
-		for _, dn := range domains {
-			if _, err := os.Stat(caPubPath(dn, "user", an)); err == nil {
-				present = append(present, dn)
-			} else {
-				missing = append(missing, dn)
-			}
+		missing, present, partial := anchorDomainState(an, domains)
+		if len(partial) > 0 {
+			// init ca fatals on a partial (interrupted) genesis until it's
+			// recovered — surface it, but don't offer an action that would fail.
+			notes = append(notes, fmt.Sprintf("anchor %s (%s): PARTIALLY provisioned for %s — interrupted genesis; run `ykt init ca %s` for recovery steps", an, a.Holder, strings.Join(partial, " "), an))
+			continue
 		}
 		if len(missing) == 0 {
 			notes = append(notes, fmt.Sprintf("anchor %s (%s): initialized, %d domain(s)", an, a.Holder, len(domains)))
