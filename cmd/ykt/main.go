@@ -538,8 +538,9 @@ func cmdStatus() {
 	}
 	say("  (%d pending)", pending)
 	head("issued certificates")
+	expiringSoon := 0
 	for _, dn := range reg.domainNames() {
-		entries := loadLedger(dn)
+		entries := loadLedger(dn) // load once per domain, reused for the expiry check
 		if len(entries) > 0 {
 			revoked := 0
 			for _, e := range entries {
@@ -549,10 +550,11 @@ func cmdStatus() {
 			}
 			say("  %-6s %d issued, %d revoked", dn, len(entries), revoked)
 		}
+		expiringSoon += len(expiringInLedger(entries, 21))
 	}
-	if ex := expiringCerts(reg, 21); len(ex) > 0 {
+	if expiringSoon > 0 {
 		head("attention")
-		warn("%d certificate(s) expire within 21 days — `ykt cert expiring` for details, `ykt cert renew` to re-request", len(ex))
+		warn("%d certificate(s) expire within 21 days — `ykt cert expiring` for details, `ykt cert renew` to re-request", expiringSoon)
 	}
 }
 
@@ -566,17 +568,28 @@ type expiringCert struct {
 
 // expiringCerts returns the non-revoked certs expiring within `days` days,
 // across every domain. Shared by `cert expiring` and the `status` summary.
-func expiringCerts(reg *Registry, days int) []expiringCert {
+// expiringInLedger returns the non-revoked entries in ONE already-loaded ledger
+// that expire within `days` days — so a caller that already holds the ledger
+// (status) doesn't re-read it.
+func expiringInLedger(entries []LedgerEntry, days int) []LedgerEntry {
 	cutoff := time.Now().AddDate(0, 0, days).Format("2006-01-02")
+	var out []LedgerEntry
+	for _, e := range entries {
+		if e.Revoked || e.Expires == "" || e.Expires == "?" {
+			continue
+		}
+		if e.Expires <= cutoff {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
+func expiringCerts(reg *Registry, days int) []expiringCert {
 	var out []expiringCert
 	for _, dn := range reg.domainNames() {
-		for _, e := range loadLedger(dn) {
-			if e.Revoked || e.Expires == "" || e.Expires == "?" {
-				continue
-			}
-			if e.Expires <= cutoff {
-				out = append(out, expiringCert{dn, e})
-			}
+		for _, e := range expiringInLedger(loadLedger(dn), days) {
+			out = append(out, expiringCert{dn, e})
 		}
 	}
 	return out

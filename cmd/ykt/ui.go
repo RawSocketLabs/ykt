@@ -229,10 +229,24 @@ func logLine(s string) {
 	if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
 		return
 	}
+	rotateLogIfLarge(p)
 	f, err := os.OpenFile(p, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
 	if err != nil {
 		return
 	}
 	defer f.Close()
 	fmt.Fprintf(f, "%s %s\n", time.Now().Format("2006-01-02 15:04:05"), s)
+}
+
+// maxLogBytes caps the audit log: past this it rotates to <path>.1 (keeping one
+// generation), so the append-only log can't grow without bound while recent
+// history survives. `ykt audit` reads .1 + current, so nothing is hidden.
+const maxLogBytes = 1 << 20 // 1 MiB
+
+// rotateLogIfLarge renames the log to <path>.1 (atomically replacing any prior
+// generation) once it passes maxLogBytes. Best-effort, like the log itself.
+func rotateLogIfLarge(path string) {
+	if fi, err := os.Stat(path); err == nil && fi.Size() >= maxLogBytes {
+		_ = os.Rename(path, path+".1")
+	}
 }

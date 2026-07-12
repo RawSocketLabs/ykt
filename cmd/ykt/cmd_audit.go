@@ -1,30 +1,48 @@
 package main
 
 import (
-	"bufio"
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 )
 
 // The audit log is machine-local (XDG state), append-only, and best-effort — it
-// records every ykt action on this machine. These commands make it viewable and
-// exportable without hunting for the file.
+// records every ykt action on this machine. It rotates to <log>.1 past a size
+// cap (see maxLogBytes); these commands read both generations so a rotation
+// hides nothing, and make the log viewable/exportable without hunting for it.
+
+// readLogLines returns the audit log lines: the rotated generation (path+".1")
+// first, then the current file. Returns os.ErrNotExist only if neither exists.
+func readLogLines(path string) ([]string, error) {
+	var lines []string
+	found := false
+	for _, f := range []string{path + ".1", path} {
+		data, err := os.ReadFile(f)
+		if err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
+			return nil, err
+		}
+		found = true
+		for _, l := range strings.Split(strings.TrimRight(string(data), "\n"), "\n") {
+			if l != "" {
+				lines = append(lines, l)
+			}
+		}
+	}
+	if !found {
+		return nil, os.ErrNotExist
+	}
+	return lines, nil
+}
 
 func cmdAudit(args []string) {
 	p := logFilePath()
 	if p == "" {
 		fatal("cannot determine the log path (is $HOME set?)")
 	}
-	f, err := os.Open(p)
-	if err != nil {
-		if os.IsNotExist(err) {
-			note("no audit log yet at %s", p)
-			return
-		}
-		fatal("%v", err)
-	}
-	defer f.Close()
 
 	limit := 40 // default: the recent tail
 	if len(args) == 1 {
@@ -37,12 +55,15 @@ func cmdAudit(args []string) {
 		}
 	}
 
-	var lines []string
-	sc := bufio.NewScanner(f)
-	sc.Buffer(make([]byte, 0, 64*1024), 1024*1024)
-	for sc.Scan() {
-		lines = append(lines, sc.Text())
+	lines, err := readLogLines(p)
+	if err != nil {
+		if os.IsNotExist(err) {
+			note("no audit log yet at %s", p)
+			return
+		}
+		fatal("%v", err)
 	}
+
 	head("audit log — %s", p)
 	start := 0
 	if limit >= 0 && len(lines) > limit {
@@ -56,13 +77,14 @@ func cmdAudit(args []string) {
 
 func cmdAuditExport(dst string) {
 	p := logFilePath()
-	if p == "" || !fileExists(p) {
+	lines, err := readLogLines(p)
+	if err != nil {
 		fatal("no audit log to export (nothing logged on this machine yet)")
 	}
-	if err := copyFile(p, dst, 0o600); err != nil {
+	if err := writeFileAtomic(dst, []byte(strings.Join(lines, "\n")+"\n"), 0o600); err != nil {
 		fatal("%v", err)
 	}
-	good("audit log → %s", dst)
+	good("audit log (%d lines) → %s", len(lines), dst)
 }
 
 func cmdAuditPath() {
