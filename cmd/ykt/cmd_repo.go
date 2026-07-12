@@ -40,6 +40,27 @@ ykt.log
 .DS_Store
 `
 
+// gitignoreSecretPatterns are the rules that MUST be present so a trust-store
+// repo never commits private material, even when the user brought their own
+// .gitignore. Kept in sync with the secrets section of repoGitignore.
+var gitignoreSecretPatterns = []string{"*.age", "*.key", "*.puk", "info.json"}
+
+// missingGitignoreSecrets returns the secret-ignoring patterns absent from an
+// existing .gitignore's content.
+func missingGitignoreSecrets(existing string) []string {
+	present := map[string]bool{}
+	for _, l := range strings.Split(existing, "\n") {
+		present[strings.TrimSpace(l)] = true
+	}
+	var missing []string
+	for _, p := range gitignoreSecretPatterns {
+		if !present[p] {
+			missing = append(missing, p)
+		}
+	}
+	return missing
+}
+
 // git runs git in dir, wired to this terminal (so auth prompts / progress show).
 func git(dir string, args ...string) error {
 	c := exec.Command("git", args...)
@@ -140,9 +161,27 @@ func cmdRepoInit(args []string, remote string) {
 	}
 
 	gi := filepath.Join(abs, ".gitignore")
-	if !fileExists(gi) {
+	switch {
+	case !fileExists(gi):
 		if err := writeFileAtomic(gi, []byte(repoGitignore), 0o644); err != nil {
 			fatal("%v", err)
+		}
+	default:
+		// A user-brought .gitignore that doesn't ignore secrets would let a later
+		// `repo push` (git add -A) commit them — append any missing secret rules
+		// (never remove anything the user has).
+		existing, _ := os.ReadFile(gi)
+		if missing := missingGitignoreSecrets(string(existing)); len(missing) > 0 {
+			var b strings.Builder
+			b.Write(existing)
+			if len(existing) > 0 && existing[len(existing)-1] != '\n' {
+				b.WriteByte('\n')
+			}
+			b.WriteString("\n# ykt: never commit secrets\n" + strings.Join(missing, "\n") + "\n")
+			if err := writeFileAtomic(gi, []byte(b.String()), 0o644); err != nil {
+				fatal("%v", err)
+			}
+			warn(".gitignore was missing secret-ignoring rules — appended: %s", strings.Join(missing, " "))
 		}
 	}
 
