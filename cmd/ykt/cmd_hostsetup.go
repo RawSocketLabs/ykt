@@ -49,15 +49,12 @@ func cmdInitHost(domains []string, multi bool, breakGlassFile string) {
 		warn("/etc/ssh/sshd_config has no Include for sshd_config.d — the drop-in will be")
 		warn("ignored. Add 'Include /etc/ssh/sshd_config.d/*.conf' before continuing.")
 	}
-	krlBytes := singleKRL(domains)
-	if krlBytes == nil && len(domains) > 1 {
-		for _, dn := range domains {
-			if _, err := os.Stat(krlPath(dn)); err == nil {
-				warn("[%s] has a KRL, but a multi-domain host uses a single RevokedKeys file", dn)
-				warn("      — push revocations to this host manually until it is single-domain")
-			}
-		}
-	}
+	// Always ship a valid KRL (empty until something is revoked) and reference it
+	// from the drop-in, so a later `cert revoke` reaches this host as a one-file
+	// push — no drop-in change, no reload. hostKRLBytes merges every trusted
+	// domain's revocations for a multi-domain host. Matches `remote install` so
+	// the two paths never write a divergent drop-in.
+	krlBytes := hostKRLBytes(domains)
 
 	// host certificate: install if a signed one exists, else queue the request.
 	hostCertSrc := ""
