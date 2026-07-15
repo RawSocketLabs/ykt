@@ -24,8 +24,8 @@ jobs:
         os: [ubuntu-latest, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v6
         with:
           go-version: '1.24'
           check-latest: true
@@ -56,8 +56,8 @@ jobs:
     if: ${{ vars.YKT_DISABLE_CI != 'true' }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v6
         with:
           go-version: '1.24'
           check-latest: true
@@ -69,7 +69,7 @@ jobs:
             echo "These files need gofmt:"; echo "$unformatted"; exit 1
           fi
       # v8 supports golangci-lint v2 (matches .golangci.yml `version: "2"`).
-      - uses: golangci/golangci-lint-action@v8
+      - uses: golangci/golangci-lint-action@v9
         with:
           version: latest
 
@@ -78,10 +78,10 @@ jobs:
     if: ${{ vars.YKT_DISABLE_CI != 'true' }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version: '1.24'
       # The gitleaks GitHub Action requires a paid license for org repos; the
