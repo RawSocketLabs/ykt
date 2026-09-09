@@ -1,13 +1,13 @@
 module github.com/RawSocketLabs/ykt
 
-go 1.25.0
+go 1.26.0
 
 require (
 	github.com/BurntSushi/toml v1.6.0
 	github.com/go-piv/piv-go/v2 v2.6.0
 	github.com/spf13/cobra v1.10.2
-	github.com/yuin/goldmark v1.8.5
-	golang.org/x/crypto v0.55.0
+	github.com/yuin/goldmark v1.8.6
+	golang.org/x/crypto v0.56.0
 	golang.org/x/term v0.45.0
 )
 
